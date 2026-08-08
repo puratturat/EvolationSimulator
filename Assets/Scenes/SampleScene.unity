@@ -3252,6 +3252,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1394365490}
   - component: {fileID: 1394365489}
+  - component: {fileID: 1394365491}
   m_Layer: 0
   m_Name: EcosystemManager
   m_TagString: Untagged
@@ -3277,15 +3278,54 @@ MonoBehaviour:
   leaterPrefab: {fileID: 8897821980796400160, guid: 40d3c6354bd5e4143b220dd6fdc1a0bd, type: 3}
   autoRespawnEnabled: 1
   respawnAmount: 100
-  normalPlantPrefab: {fileID: 6355428841029417161, guid: d2bb6c9928addbd41ac16c1c345cd372, type: 3}
-  poisonousPlantPrefab: {fileID: 2322050866355255480, guid: 5d1e5caaa9e915044a7cb5b82ce25fc5, type: 3}
-  spawnInterval: 10
-  maxTotalPlantLimit: 150
-  poisonSpawnChance: 20
   minX: -240
   maxX: 240
   minY: -240
   maxY: 240
+--- !u!114 &1394365491
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1394365488}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6f02e9b5787c4d0c93f96e80e8b2c812, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::BiomeGenerator
+  ecosystemManager: {fileID: 1394365489}
+  generatedBiomesParent: {fileID: 0}
+  biomes:
+  - biomeName: Verimli Ova
+    areaCount: 3
+    minRadius: 18
+    maxRadius: 26
+    normalPlantCount: 12
+    poisonousPlantCount: 2
+    normalPlantPrefab: {fileID: 6355428841029417161, guid: d2bb6c9928addbd41ac16c1c345cd372, type: 3}
+    poisonousPlantPrefab: {fileID: 2322050866355255480, guid: 5d1e5caaa9e915044a7cb5b82ce25fc5, type: 3}
+    minimumPlantSpacing: 3
+    gizmoColor: {r: 0.2, g: 0.8, b: 0.3, a: 0.8}
+  - biomeName: Zehirli Koruluk
+    areaCount: 2
+    minRadius: 14
+    maxRadius: 22
+    normalPlantCount: 4
+    poisonousPlantCount: 8
+    normalPlantPrefab: {fileID: 6355428841029417161, guid: d2bb6c9928addbd41ac16c1c345cd372, type: 3}
+    poisonousPlantPrefab: {fileID: 2322050866355255480, guid: 5d1e5caaa9e915044a7cb5b82ce25fc5, type: 3}
+    minimumPlantSpacing: 3
+    gizmoColor: {r: 0.65, g: 0.15, b: 0.75, a: 0.8}
+  generateOnStart: 1
+  useRandomSeed: 1
+  fixedSeed: 12345
+  worldEdgePadding: 2
+  minimumBiomeGap: 4
+  biomePlacementAttempts: 100
+  plantPlacementAttempts: 30
+  maintainPlantTargets: 1
+  populationCheckInterval: 5
 --- !u!4 &1394365490
 Transform:
   m_ObjectHideFlags: 0

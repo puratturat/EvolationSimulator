@@ -20,48 +20,19 @@ public class EcosystemManager : MonoBehaviour
     public int respawnAmount = 100; // 🌟 YENİ: Kaç tane doğacak?
     private bool hasLifeEverExisted = false; // Sistem oyuna ilk canlının girmesini bekler
 
-    [Header("Doğa Ayarları (Bitki Üretimi)")]
-    public GameObject normalPlantPrefab; 
-    public GameObject poisonousPlantPrefab; 
-    
-    public float spawnInterval = 10f; 
-    public int maxTotalPlantLimit = 20; 
-
-    [Range(0, 100)] public int poisonSpawnChance = 15; 
-
     [Header("Dünya Sınırları (Harita Büyüklüğü)")]
     public float minX = -15f;
     public float maxX = 15f;
     public float minY = -10f;
     public float maxY = 10f;
 
-    private float timer;
-
     void Awake()
     {
         instance = this;
     }
 
-    void Start()
-    {
-        int startingPoisonous = Mathf.RoundToInt(maxTotalPlantLimit * (poisonSpawnChance / 100f));
-        int startingNormal = maxTotalPlantLimit - startingPoisonous;
-
-        for (int i = 0; i < startingNormal; i++) SpawnSinglePlant(normalPlantPrefab);
-        for (int i = 0; i < startingPoisonous; i++) SpawnSinglePlant(poisonousPlantPrefab);
-
-        timer = spawnInterval; 
-    }
-
     void Update()
     {
-        timer -= Time.deltaTime;
-        if (timer <= 0f)
-        {
-            CheckAndSpawnPlant();
-            timer = spawnInterval; 
-        }
-
         uiUpdateTimer -= Time.deltaTime;
         if (uiUpdateTimer <= 0f)
         {
@@ -94,6 +65,30 @@ public class EcosystemManager : MonoBehaviour
         }
     }
 
+    public void RegisterPlant(PlantHub plant)
+    {
+        if (plant != null && !allLivingPlants.Contains(plant))
+        {
+            allLivingPlants.Add(plant);
+        }
+    }
+
+    public void UnregisterPlant(PlantHub plant)
+    {
+        if (plant != null)
+        {
+            allLivingPlants.Remove(plant);
+        }
+    }
+
+    public bool IsInsideWorld(Vector2 position, float margin = 0f)
+    {
+        return position.x >= minX + margin &&
+               position.x <= maxX - margin &&
+               position.y >= minY + margin &&
+               position.y <= maxY - margin;
+    }
+
     // 🌟 YENİ: Haritaya rastgele dağılmış 100 canlı fırlatma motoru
     public void TriggerMassRespawn()
     {
@@ -111,42 +106,6 @@ public class EcosystemManager : MonoBehaviour
             
             Vector2 randomPosition = new Vector2(randomX, randomY);
             Instantiate(leaterPrefab, randomPosition, Quaternion.identity);
-        }
-    }
-
-    void CheckAndSpawnPlant()
-    {
-        if (allLivingPlants.Count >= maxTotalPlantLimit)
-        {
-            return; 
-        }
-
-        GameObject prefabToSpawn = normalPlantPrefab; 
-        if (Random.Range(0, 100) < poisonSpawnChance)
-        {
-            prefabToSpawn = poisonousPlantPrefab; 
-        }
-
-        SpawnSinglePlant(prefabToSpawn);
-    }
-
-    void SpawnSinglePlant(GameObject prefab)
-    {
-        float margin = 5f; 
-        float randomX = Random.Range(minX + margin, maxX - margin);
-        float randomY = Random.Range(minY + margin, maxY - margin);
-        
-        Vector2 randomPosition = new Vector2(randomX, randomY);
-
-        if (prefab != null)
-        {
-            GameObject newPlant = Instantiate(prefab, randomPosition, Quaternion.identity);
-            PlantHub plantScript = newPlant.GetComponentInChildren<PlantHub>();
-            
-            if (plantScript != null && !allLivingPlants.Contains(plantScript))
-            {
-                allLivingPlants.Add(plantScript);
-            }
         }
     }
 
