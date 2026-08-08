@@ -617,7 +617,11 @@ public class LeaterBrain : MonoBehaviour
         
         if (currentAttackCooldown <= 0)
         {
-            preyStats.currentHealth -= stats.currentAttackDamage;
+            float damage = stats.currentAttackDamage;
+            preyStats.TakeDamage(damage, SimulationDeathCause.Predation, stats);
+            stats.lifetimeAttacks++;
+            stats.lifetimeDamageDealt += damage;
+            SimulationEventLogger.RecordAttack(stats, preyStats, damage);
             
             // 🌟 ARTIK DNA'DAN OKUYOR: Genetik Enerji Bedeli
             stats.currentEnergy = Mathf.Max(0f, stats.currentEnergy - attackEnergyCost);
@@ -671,7 +675,13 @@ public class LeaterBrain : MonoBehaviour
                     activeEfficiency = stats.dna.meatEfficiency;
 
                 // Enerjiyi doğru sindirim katsayısıyla al! 
-                stats.currentEnergy += gainedEnergy * activeEfficiency;
+                float digestedEnergy = gainedEnergy * activeEfficiency;
+                stats.currentEnergy += digestedEnergy;
+
+                if (eatenFoodType == FoodType.Plant) stats.lifetimePlantsEaten++;
+                else if (eatenFoodType == FoodType.PoisonousPlant) stats.lifetimePoisonPlantsEaten++;
+                else if (eatenFoodType == FoodType.Meat) stats.lifetimeMeatEaten++;
+                SimulationEventLogger.RecordFoodConsumed(stats, eatenFoodType, digestedEnergy);
 
                 // 🌟 YENİ: YEMEK YEDİĞİN YERİ EVİN YAP!
                 homePoint = transform.position;
@@ -685,7 +695,7 @@ public class LeaterBrain : MonoBehaviour
                 // 🌟 ZEHİR HASARI HESAPLAMASI 🌟
                 if (eatenFoodType == FoodType.PoisonousPlant && eatenFoodData != null)
                 {
-                    stats.currentHealth -= poisonDamage;
+                    stats.TakeDamage(poisonDamage, SimulationDeathCause.Poison);
                 }
             }
 
@@ -762,6 +772,10 @@ public class LeaterBrain : MonoBehaviour
                 // Bebeğin fiziksel bedeni yaratılır
                 GameObject baby = Instantiate(gameObject, spawnPosition, Quaternion.identity);
                 CreatureStats babyStats = baby.GetComponent<CreatureStats>();
+                babyStats.ResetLifetimeObservationStats();
+                stats.lifetimeOffspring++;
+                mateStats.lifetimeOffspring++;
+                SimulationEventLogger.RecordBirth(stats, mateStats);
                 
                 // 🌟 MUCİZE BURADA GERÇEKLEŞİYOR! 🌟
                 babyStats.dna = CreatureData.CreateMix(this.stats.dna, this.mateStats.dna);

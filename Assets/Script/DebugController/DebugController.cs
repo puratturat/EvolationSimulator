@@ -1,5 +1,6 @@
 using UnityEngine;
 using TMPro; 
+using UnityEngine.EventSystems;
 
 public class DebugController : MonoBehaviour
 {
@@ -25,6 +26,11 @@ public class DebugController : MonoBehaviour
         {
             if (Input.GetMouseButtonDown(0))
             {
+                if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                {
+                    return;
+                }
+
                 // 🌟 ÇÖZÜMÜN KALBİ BURASI 🌟
                 // Eğer Yaratıcı Modundaysak (Elimizde tıklayıp spawnlamak için bir canlı tutuyorsak),
                 // Işın atıp canlıyı seçme (Raycast) işlemini İPTAL ET!
@@ -58,8 +64,7 @@ public class DebugController : MonoBehaviour
 
             if (clickedStats != null)
             {
-                selectedCreature = clickedStats;
-                statsPanel.SetActive(true);
+                SelectCreature(clickedStats);
                 return; 
             }
         }
@@ -73,6 +78,19 @@ public class DebugController : MonoBehaviour
     {
         selectedCreature = null;
         statsPanel.SetActive(false);
+    }
+
+    public void SelectCreature(CreatureStats creature)
+    {
+        if (creature == null)
+        {
+            Deselect();
+            return;
+        }
+
+        selectedCreature = creature;
+        statsPanel.SetActive(true);
+        UpdatePanelInfo();
     }
 
 void UpdatePanelInfo()

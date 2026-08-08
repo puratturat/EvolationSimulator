@@ -4,6 +4,16 @@ public enum LifeStage { Young, Adult, Old }
 
 public class CreatureStats : MonoBehaviour
 {
+    [Header("Gözlem Kayıtları")]
+    public long observationId;
+    public int lifetimePlantsEaten;
+    public int lifetimePoisonPlantsEaten;
+    public int lifetimeMeatEaten;
+    public int lifetimeAttacks;
+    public int lifetimeKills;
+    public int lifetimeOffspring;
+    public float lifetimeDamageDealt;
+
     [Header("Genetik Veri")]
     public CreatureData dna; 
 
@@ -34,6 +44,10 @@ public class CreatureStats : MonoBehaviour
     [Header("Açlık ve Ölüm Ayarları")]
     public float starvationDamage = 5f; 
     public GameObject meatPrefab; // Öldüğünde yere düşecek olan et objesi
+
+    private SimulationDeathCause lastDamageCause = SimulationDeathCause.Unknown;
+    private CreatureStats lastAttacker;
+    private bool isDead;
 
     // 🌟 1. KRİTİK FİX: DNA FOTOKOPİSİ (Bunu eklemezsek tüm türler aynı anda mutasyon geçirir!)
     void Awake()
@@ -66,6 +80,8 @@ public class CreatureStats : MonoBehaviour
         {
             EcosystemManager.instance.allLivingCreatures.Add(this);
         }
+
+        observationId = SimulationEventLogger.RegisterCreature(this);
     }
 
     void Update()
@@ -112,7 +128,7 @@ public class CreatureStats : MonoBehaviour
             {
                 currentEnergy = 0f; 
                 currentSpeed = CalculateCurrentSpeed() / 2f; 
-                currentHealth -= starvationDamage * Time.deltaTime; 
+                TakeDamage(starvationDamage * Time.deltaTime, SimulationDeathCause.Starvation);
             }
 
             if (currentHealth <= 0)
@@ -135,6 +151,18 @@ public class CreatureStats : MonoBehaviour
 
             currentHealth = currentMaxHealth;
         }
+    }
+
+    public void ResetLifetimeObservationStats()
+    {
+        observationId = 0;
+        lifetimePlantsEaten = 0;
+        lifetimePoisonPlantsEaten = 0;
+        lifetimeMeatEaten = 0;
+        lifetimeAttacks = 0;
+        lifetimeKills = 0;
+        lifetimeOffspring = 0;
+        lifetimeDamageDealt = 0f;
     }
 
     // 🌟 YENİ NESİL BİYOLOJİK YAŞLANMA VE ÖMÜR MOTORU 🌟
@@ -219,8 +247,32 @@ public class CreatureStats : MonoBehaviour
         return dna.healingRate * (1f + (toxicovoreFocus * 0.80f));
     }
 
+    public void TakeDamage(float amount, SimulationDeathCause cause, CreatureStats attacker = null)
+    {
+        if (isDead || amount <= 0f)
+        {
+            return;
+        }
+
+        currentHealth -= amount;
+        lastDamageCause = cause;
+        lastAttacker = attacker;
+    }
+
     void Die()
     {
+        if (isDead)
+        {
+            return;
+        }
+
+        isDead = true;
+        if (lastDamageCause == SimulationDeathCause.Predation && lastAttacker != null)
+        {
+            lastAttacker.lifetimeKills++;
+        }
+        SimulationEventLogger.RecordDeath(this, lastDamageCause, lastAttacker);
+
         if (EcosystemManager.instance != null)
         {
             // Önce ölen canlıyı listeden çıkarıyoruz ki rastgele seçerken kendisini bir daha seçmesin
