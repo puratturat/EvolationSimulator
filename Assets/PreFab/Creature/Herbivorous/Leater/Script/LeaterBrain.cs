@@ -16,6 +16,26 @@ public class LeaterBrain : MonoBehaviour
     public float mateDistance = 1.5f; 
     public float mateDuration = 3f; 
 
+    [Header("Zehirli Besin Dengesi")]
+    [InspectorName("Uyumsuz Canlı Acil Açlık Eşiği")]
+    [Tooltip("Zehre uyum sağlamamış canlılar yalnızca enerjileri bu oranın altına düştüğünde zehirli besini düşünür.")]
+    [Range(0f, 1f)] public float unadaptedPoisonEmergencyThreshold = 0.08f;
+    [InspectorName("Uyumlu Canlı Beslenme Eşiği")]
+    [Tooltip("Tam uyumlu canlılar enerjileri bu oranın altındayken zehirli besini normal bir kaynak olarak kullanabilir.")]
+    [Range(0f, 1f)] public float adaptedPoisonEnergyThreshold = 0.50f;
+    [InspectorName("Tam Uyum Gen Eşiği")]
+    [Tooltip("Zehir isteği ve direncinin geometrik ortalaması bu değere ulaştığında canlı tam uyumlu sayılır.")]
+    [Range(0.05f, 1f)] public float fullPoisonAdaptationThreshold = 0.35f;
+    [InspectorName("Zehir Hasarı / Maksimum Can")]
+    [Tooltip("Direnç uygulanmadan önce tek zehirli öğünün vereceği asgari hasarın maksimum cana oranı.")]
+    [Range(0f, 1f)] public float poisonMaxHealthDamageRatio = 0.45f;
+    [InspectorName("Dirençsiz Besin Kazancı")]
+    [Tooltip("Hiç zehir direnci olmayan canlının zehirli bitkiden alabileceği besin oranı.")]
+    [Range(0f, 1f)] public float minimumPoisonNutrition = 0.12f;
+    [InspectorName("Tam Dirençli Besin Kazancı")]
+    [Tooltip("Tam dirençli canlının zehirli bitkiden alacağı besin çarpanı.")]
+    [Range(1f, 2f)] public float maximumPoisonNutrition = 1.10f;
+
     [Header("Engel Aşma (Bıyık Sistemi)")]
     public LayerMask obstacleLayer; // Hangi objelerden kaçacak?
     public float avoidDistance = 1.0f; // Bıyıkların uzunluğu
@@ -292,6 +312,45 @@ public class LeaterBrain : MonoBehaviour
         // NOT: Burada transform.Translate YOK! Yani canlı adım atmıyor, sadece olduğu yerde dönüyor.
     }
 
+    float GetPoisonAdaptation()
+    {
+        float desire = Mathf.Clamp01(stats.dna.desirePoison);
+        float resistance = Mathf.Clamp01(stats.dna.poisonResistance);
+        return Mathf.Sqrt(desire * resistance);
+    }
+
+    float GetPoisonNutritionMultiplier()
+    {
+        return Mathf.Lerp(minimumPoisonNutrition, maximumPoisonNutrition, Mathf.Clamp01(stats.dna.poisonResistance));
+    }
+
+    float CalculatePoisonDamage(FoodObject food)
+    {
+        if (food == null || food.foodData == null) return 0f;
+
+        float resistance = Mathf.Clamp01(stats.dna.poisonResistance);
+        float scaledBaseDamage = Mathf.Max(food.foodData.poisonDamage, stats.currentMaxHealth * poisonMaxHealthDamageRatio);
+        return scaledBaseDamage * Mathf.Pow(1f - resistance, 1.5f);
+    }
+
+    bool CanTargetPoison(FoodObject food)
+    {
+        float energyRatio = stats.currentMaxEnergy > 0f
+            ? stats.currentEnergy / stats.currentMaxEnergy
+            : 0f;
+        float adaptation = Mathf.InverseLerp(0f, fullPoisonAdaptationThreshold, GetPoisonAdaptation());
+        float allowedEnergyThreshold = Mathf.Lerp(
+            unadaptedPoisonEmergencyThreshold,
+            adaptedPoisonEnergyThreshold,
+            adaptation);
+
+        if (energyRatio > allowedEnergyThreshold) return false;
+
+        float expectedDamage = CalculatePoisonDamage(food);
+        bool wouldBeImmediatelyFatal = expectedDamage >= stats.currentHealth;
+        return !wouldBeImmediatelyFatal;
+    }
+
 
     // 🌟 4'Ü 1 ARADA RADAR SİSTEMİ (Yemek, Av, Eş ve Sürü)
     void ScanEnvironment()
@@ -326,7 +385,18 @@ public class LeaterBrain : MonoBehaviour
             if (food != null)
             {
                 float desireMult = 0f; float effMult = 0f;
-                if (food.type == FoodType.Plant || food.type == FoodType.PoisonousPlant) { desireMult = (food.type == FoodType.Plant) ? stats.dna.desirePlant : stats.dna.desirePoison; effMult = stats.dna.plantEfficiency; }
+                if (food.type == FoodType.Plant)
+                {
+                    desireMult = stats.dna.desirePlant;
+                    effMult = stats.dna.plantEfficiency;
+                }
+                else if (food.type == FoodType.PoisonousPlant)
+                {
+                    if (!CanTargetPoison(food)) continue;
+
+                    desireMult = stats.dna.desirePoison;
+                    effMult = stats.dna.plantEfficiency * GetPoisonNutritionMultiplier();
+                }
                 else if (food.type == FoodType.Meat) { desireMult = stats.dna.desireMeat; effMult = stats.dna.meatEfficiency; }
 
                 float score = (food.currentEnergy * effMult / safeDist) * desireMult;
@@ -497,6 +567,11 @@ public class LeaterBrain : MonoBehaviour
         eatTimer -= Time.deltaTime;
         if (eatTimer <= 0)
         {
+            FoodType eatenFoodType = currentFoodData.type;
+            FoodData eatenFoodData = currentFoodData.foodData;
+            float poisonDamage = eatenFoodType == FoodType.PoisonousPlant
+                ? CalculatePoisonDamage(currentFoodData)
+                : 0f;
             float gainedEnergy = currentFoodData.Consume();
             
             if (gainedEnergy > 0)
@@ -504,9 +579,11 @@ public class LeaterBrain : MonoBehaviour
                 // 🌟 MİDE KONTROLÜ: Acaba ot mu yedim et mi? 🌟
                 float activeEfficiency = 0f;
 
-                if (currentFoodData.type == FoodType.Plant || currentFoodData.type == FoodType.PoisonousPlant)
+                if (eatenFoodType == FoodType.Plant)
                     activeEfficiency = stats.dna.plantEfficiency;
-                else if (currentFoodData.type == FoodType.Meat)
+                else if (eatenFoodType == FoodType.PoisonousPlant)
+                    activeEfficiency = stats.dna.plantEfficiency * GetPoisonNutritionMultiplier();
+                else if (eatenFoodType == FoodType.Meat)
                     activeEfficiency = stats.dna.meatEfficiency;
 
                 // Enerjiyi doğru sindirim katsayısıyla al! 
@@ -522,10 +599,9 @@ public class LeaterBrain : MonoBehaviour
                 stats.AddGrowth(gainedEnergy, activeEfficiency); 
 
                 // 🌟 ZEHİR HASARI HESAPLAMASI 🌟
-                if (currentFoodData.type == FoodType.PoisonousPlant && currentFoodData.foodData != null)
+                if (eatenFoodType == FoodType.PoisonousPlant && eatenFoodData != null)
                 {
-                    float actualDamage = currentFoodData.foodData.poisonDamage * (1f - stats.dna.poisonResistance);
-                    stats.currentHealth -= actualDamage;
+                    stats.currentHealth -= poisonDamage;
                 }
             }
 
