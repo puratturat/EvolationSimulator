@@ -25,14 +25,14 @@ MonoBehaviour:
   poisonResistance: 0
   attackDistance: 1.5
   attackCooldown: 1
-  attackDamageMultiplier: 50
+  attackDamageMultiplier: 18
   attackEnergyCost: 3
-  desirePlant: 1
-  desirePoison: 0
-  desireMeat: 0
+  desirePlant: 0.94
+  desirePoison: 0.02
+  desireMeat: 0.04
   moveSpeed: 10
   plantEfficiency: 1.3
-  meatEfficiency: 0
+  meatEfficiency: 0.08
   eatDuration: 2
   idleEnergyDrain: 0.1
   moveEnergyDrain: 0.25

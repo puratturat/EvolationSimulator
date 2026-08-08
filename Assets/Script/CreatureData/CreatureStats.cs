@@ -209,7 +209,8 @@ public class CreatureStats : MonoBehaviour
     float CalculateCurrentAttackDamage()
     {
         float predatorFocus = dna.desireMeat * dna.meatEfficiency;
-        return (dna.baseSize * dna.attackDamageMultiplier) * (1f + (predatorFocus * 0.50f));
+        float physicalSize = Mathf.Max(Mathf.Abs(transform.localScale.x), Mathf.Abs(transform.localScale.y));
+        return (physicalSize * dna.attackDamageMultiplier) * (1f + (predatorFocus * 0.50f));
     }
 
     float CalculateCurrentHealingRate()
@@ -267,8 +268,8 @@ public class CreatureStats : MonoBehaviour
 
         // 🌟 BİYOLOJİK YÖNELİM BİASLARI (Zar Hileleri) 🌟
         // Ebeveynin yönelimi ne kadar güçlüyse, sonraki neslin o sınıfa ait mutasyon şansı o kadar katlanır!
-        float meatBias = (dna.desireMeat * dna.meatEfficiency) * 0.05f;      // Maks +0.10 mutasyon kıyağı
-        float plantBias = (dna.desirePlant * dna.plantEfficiency) * 0.05f;   // Maks +0.10 mutasyon kıyağı
+        float meatBias = (dna.desireMeat * dna.meatEfficiency) * 0.06f;
+        float plantBias = (dna.desirePlant * dna.plantEfficiency) * 0.02f;
         float poisonBias = (dna.desirePoison * dna.poisonResistance) * 0.05f;// Maks +0.05 mutasyon kıyağı
 
         // 1. BOYUT VE GÜÇ MUTASYONU (Otçulların devleşme eğilimi vardır)
@@ -282,13 +283,13 @@ public class CreatureStats : MonoBehaviour
         // 2. SİNDİRİM VERİMLİLİĞİ (KATI MİDE KAPASİTESİ VE TAHTEREVALLİ KURALI)
         dna.plantEfficiency += Random.Range(-0.05f, 0.05f) + plantBias;
         
-        if (dna.meatEfficiency <= 0.01f && Random.value < (0.20f + (plantBias * -1.5f))) // Otçullarda et geni uyanması zorlaşır
-            dna.meatEfficiency += Random.Range(0.01f, 0.05f);
+        if (dna.meatEfficiency <= 0.12f && Random.value < 0.25f)
+            dna.meatEfficiency += Random.Range(0.03f, 0.085f);
         else 
-            dna.meatEfficiency += Random.Range(-0.05f, 0.05f) + meatBias; // Etçillerde et verimi mutasyonları hep pozitif kayar
+            dna.meatEfficiency += Random.Range(-0.05f, 0.05f) + meatBias;
 
         dna.plantEfficiency = Mathf.Max(0f, dna.plantEfficiency);
-        dna.meatEfficiency = Mathf.Max(0f, dna.meatEfficiency);
+        dna.meatEfficiency = Mathf.Max(0.01f, dna.meatEfficiency);
 
         // TAHETEREVALLİ: Mide enzimleri toplamı 2.0'yi aşamaz!
         float totalEfficiency = dna.plantEfficiency + dna.meatEfficiency;
@@ -320,7 +321,9 @@ public class CreatureStats : MonoBehaviour
         // 5. ÜÇLÜ ARZU SİSTEMİ (PASTA DİLİMİ MANTIĞI)
         dna.desirePlant += Random.Range(-0.05f, 0.05f);
         dna.desirePoison += Random.Range(-0.05f, 0.05f);
-        dna.desireMeat += Random.Range(-0.05f, 0.05f) + meatBias;
+        dna.desireMeat += Random.Range(-0.045f, 0.05f) + meatBias;
+        if (Random.value < 0.08f)
+            dna.desireMeat += Random.Range(0.02f, 0.07f);
 
         dna.desirePlant = Mathf.Max(0.01f, dna.desirePlant);
         dna.desirePoison = Mathf.Max(0.01f, dna.desirePoison);
@@ -335,7 +338,9 @@ public class CreatureStats : MonoBehaviour
         dna.poisonResistance = Mathf.Clamp(dna.poisonResistance, 0f, 1f);
 
         // 6. AVCILIK MUTASYONU (Pençeler, Dişler ve Hız)
-        float huntMut = Random.Range(-0.05f, 0.05f) + meatBias; // Etçil soyları avcılık genlerini geometrik hızla geliştirir
+        float predatorFocus = Mathf.Clamp01(dna.desireMeat * dna.meatEfficiency);
+        float unusedWeaponBias = (1f - predatorFocus) * 0.02f;
+        float huntMut = Random.Range(-0.05f, 0.05f) + meatBias - unusedWeaponBias;
         dna.attackDistance += dna.attackDistance * huntMut;
         dna.attackDamageMultiplier += dna.attackDamageMultiplier * huntMut;
         dna.attackEnergyCost += dna.attackEnergyCost * huntMut;
@@ -362,7 +367,9 @@ public class CreatureStats : MonoBehaviour
         float omnivoreTax = (dna.plantEfficiency * dna.meatEfficiency) * 0.05f;
         float smellTax = dna.smellRadius * 0.005f;
         float poisonTax = dna.poisonResistance * 0.02f;
-        dna.idleEnergyDrain = Mathf.Max(0.01f, dna.baseIdleEnergyDrain + omnivoreTax + smellTax + poisonTax);
+        float biteStrengthTax = Mathf.InverseLerp(5f, 50f, dna.attackDamageMultiplier) * 0.12f;
+        float biteReachTax = Mathf.InverseLerp(0.5f, 4f, dna.attackDistance) * 0.05f;
+        dna.idleEnergyDrain = Mathf.Max(0.01f, dna.baseIdleEnergyDrain + omnivoreTax + smellTax + poisonTax + biteStrengthTax + biteReachTax);
 
         // --- RENK VE BİÇİM MOTORU (GELİŞMİŞ SÜRÜM - AYNEN KORUNDU) ---
         float sizeNorm = Mathf.InverseLerp(0.3f, 3f, dna.baseSize);

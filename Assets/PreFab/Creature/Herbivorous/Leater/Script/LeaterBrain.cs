@@ -36,6 +36,26 @@ public class LeaterBrain : MonoBehaviour
     [Tooltip("Tam dirençli canlının zehirli bitkiden alacağı besin çarpanı.")]
     [Range(1f, 2f)] public float maximumPoisonNutrition = 1.10f;
 
+    [Header("Et ve Avcılık Evrimi")]
+    [InspectorName("Uyumsuz Canlı Leş Eşiği")]
+    [Tooltip("Etçil uyumu olmayan canlılar yalnızca enerjileri bu oranın altındayken yerdeki eti son çare olarak yer.")]
+    [Range(0f, 1f)] public float unadaptedCarrionEmergencyThreshold = 0.12f;
+    [InspectorName("Uyumsuz Canlı Av Eşiği")]
+    [Tooltip("Etçil uyumu olmayan canlılar yalnızca enerjileri bu oranın altındayken daha küçük bir canlıyı avlamayı dener.")]
+    [Range(0f, 1f)] public float unadaptedHuntEmergencyThreshold = 0.05f;
+    [InspectorName("Uyumlu Etçil Beslenme Eşiği")]
+    [Tooltip("Tam uyumlu etçiller enerjileri bu oranın altındayken leş ve canlı av arar.")]
+    [Range(0f, 1f)] public float adaptedCarnivoreEnergyThreshold = 0.55f;
+    [InspectorName("Tam Etçil Uyum Gen Eşiği")]
+    [Tooltip("Et isteği ve et sindiriminin geometrik ortalaması bu değere ulaştığında davranış tam etçil kabul edilir.")]
+    [Range(0.05f, 1f)] public float fullCarnivoreAdaptationThreshold = 0.35f;
+    [InspectorName("Fırsatçı Asgari Boyut Üstünlüğü")]
+    [Tooltip("Etçil uyumu olmayan bir canlının avından kaç kat büyük olması gerektiği.")]
+    [Range(1f, 3f)] public float opportunistRequiredSizeRatio = 1.25f;
+    [InspectorName("Predatör Asgari Boyut Oranı")]
+    [Tooltip("Tam uyumlu bir predatörün saldırabileceği avlara göre asgari boyut oranı.")]
+    [Range(0.25f, 1f)] public float predatorRequiredSizeRatio = 0.65f;
+
     [Header("Engel Aşma (Bıyık Sistemi)")]
     public LayerMask obstacleLayer; // Hangi objelerden kaçacak?
     public float avoidDistance = 1.0f; // Bıyıkların uzunluğu
@@ -351,6 +371,66 @@ public class LeaterBrain : MonoBehaviour
         return !wouldBeImmediatelyFatal;
     }
 
+    float GetCarnivoreAdaptation()
+    {
+        float desire = Mathf.Clamp01(stats.dna.desireMeat);
+        float digestion = Mathf.Clamp01(stats.dna.meatEfficiency);
+        float rawAdaptation = Mathf.Sqrt(desire * digestion);
+        return Mathf.InverseLerp(0f, fullCarnivoreAdaptationThreshold, rawAdaptation);
+    }
+
+    float GetEnergyRatio()
+    {
+        return stats.currentMaxEnergy > 0f
+            ? Mathf.Clamp01(stats.currentEnergy / stats.currentMaxEnergy)
+            : 0f;
+    }
+
+    float GetPhysicalSize(CreatureStats creature)
+    {
+        if (creature == null) return 0f;
+        Vector3 scale = creature.transform.localScale;
+        return Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y));
+    }
+
+    bool CanTargetCarrion()
+    {
+        float allowedEnergyThreshold = Mathf.Lerp(
+            unadaptedCarrionEmergencyThreshold,
+            adaptedCarnivoreEnergyThreshold,
+            GetCarnivoreAdaptation());
+        return GetEnergyRatio() <= allowedEnergyThreshold;
+    }
+
+    bool CanHuntLivingPrey(CreatureStats candidate)
+    {
+        if (candidate == null || candidate.dna == null || candidate.currentHealth <= 0f) return false;
+
+        float adaptation = GetCarnivoreAdaptation();
+        float allowedEnergyThreshold = Mathf.Lerp(
+            unadaptedHuntEmergencyThreshold,
+            adaptedCarnivoreEnergyThreshold,
+            adaptation);
+        if (GetEnergyRatio() > allowedEnergyThreshold) return false;
+
+        float ownSize = GetPhysicalSize(stats);
+        float preySize = Mathf.Max(GetPhysicalSize(candidate), 0.01f);
+        float requiredSizeRatio = Mathf.Lerp(
+            opportunistRequiredSizeRatio,
+            predatorRequiredSizeRatio,
+            adaptation);
+        if ((ownSize / preySize) < requiredSizeRatio) return false;
+
+        float healingBetweenBites = candidate.currentHealingRate * Mathf.Max(stats.dna.attackCooldown, 0.2f);
+        float damagePerBite = stats.currentAttackDamage - healingBetweenBites;
+        if (damagePerBite <= 0f) return false;
+
+        float attackEnergyCost = Mathf.Max(stats.dna.baseSize * stats.dna.attackEnergyCost, 0.01f);
+        float expectedBites = Mathf.Ceil(candidate.currentHealth / damagePerBite);
+        float expectedHuntCost = expectedBites * attackEnergyCost;
+        return expectedHuntCost <= stats.currentEnergy;
+    }
+
 
     // 🌟 4'Ü 1 ARADA RADAR SİSTEMİ (Yemek, Av, Eş ve Sürü)
     void ScanEnvironment()
@@ -397,7 +477,13 @@ public class LeaterBrain : MonoBehaviour
                     desireMult = stats.dna.desirePoison;
                     effMult = stats.dna.plantEfficiency * GetPoisonNutritionMultiplier();
                 }
-                else if (food.type == FoodType.Meat) { desireMult = stats.dna.desireMeat; effMult = stats.dna.meatEfficiency; }
+                else if (food.type == FoodType.Meat)
+                {
+                    if (!CanTargetCarrion()) continue;
+
+                    desireMult = stats.dna.desireMeat;
+                    effMult = stats.dna.meatEfficiency;
+                }
 
                 float score = (food.currentEnergy * effMult / safeDist) * desireMult;
                 if (score > bestFoodScore) { bestFoodScore = score; bestFoodTarget = hit.transform; bestFoodData = food; bestPrey = null; }
@@ -443,15 +529,13 @@ public class LeaterBrain : MonoBehaviour
                     }
                 }
 
-                if (stats.dna.desireMeat > 0.3f && stats.dna.meatEfficiency > 0.2f)
+                if (CanHuntLivingPrey(otherCreature))
                 {
-                    float courage = stats.dna.baseSize / otherCreature.dna.baseSize;
-                    if (courage > 0.6f)
-                    {
-                        float score = (courage * stats.dna.desireMeat * stats.dna.meatEfficiency / safeDist) * 50f;
-                        if (score > bestFoodScore) { bestFoodScore = score; bestFoodTarget = hit.transform; bestFoodData = null; bestPrey = otherCreature; }
-                        continue;
-                    }
+                    float sizeAdvantage = GetPhysicalSize(stats) / Mathf.Max(GetPhysicalSize(otherCreature), 0.01f);
+                    float vulnerability = stats.currentAttackDamage / Mathf.Max(otherCreature.currentHealth, 1f);
+                    float score = (sizeAdvantage * vulnerability * stats.dna.desireMeat * stats.dna.meatEfficiency / safeDist) * 100f;
+                    if (score > bestFoodScore) { bestFoodScore = score; bestFoodTarget = hit.transform; bestFoodData = null; bestPrey = otherCreature; }
+                    continue;
                 }
 
                 if (!isMatingMode && !isHungryMode && canSee) 
