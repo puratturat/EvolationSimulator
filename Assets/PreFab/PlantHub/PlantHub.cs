@@ -26,11 +26,6 @@ public class PlantHub : MonoBehaviour
 
     void Start()
     {
-        if (EcosystemManager.instance != null)
-        {
-            EcosystemManager.instance.RegisterPlant(this);
-        }
-
         lifeTimer = Random.Range(minLifespan, maxLifespan);
         spawnTimer = 0f; 
     }
@@ -133,9 +128,9 @@ public class PlantHub : MonoBehaviour
 
     void OnDestroy()
     {
-        if (EcosystemManager.instance != null)
+        if (EcosystemManager.instance != null && EcosystemManager.instance.allLivingPlants.Contains(this))
         {
-            EcosystemManager.instance.UnregisterPlant(this);
+            EcosystemManager.instance.allLivingPlants.Remove(this);
         }
     }
 }

@@ -3,6 +3,8 @@ using UnityEngine.EventSystems;
 
 public class FoodSpawnController : MonoBehaviour
 {
+        public static FoodSpawnController instance;
+
     [Header("Arayüz (UI) Referansları")]
         public GameObject spawnPanel; // Açılıp kapanacak olan alt panel
 
@@ -12,6 +14,11 @@ public class FoodSpawnController : MonoBehaviour
 
         // Aklımızda tutacağımız "Şu an farenin ucunda hangi yemek var?" bilgisi
         private GameObject selectedFoodToSpawn; 
+
+        void Awake()
+        {
+            instance = this;
+        }
 
         // Unity'de Cursor (İmleç) görsellerini değiştirmek için (İleride ekleyeceğiz)
         // public Texture2D otCursor;
@@ -29,7 +36,7 @@ public class FoodSpawnController : MonoBehaviour
             if (selectedFoodToSpawn != null && Input.GetMouseButtonDown(0))
             {
                 // ÖNEMLİ: Eğer fare o an bir UI butonunun (örneğin İptal butonu) üzerindeyse spawnlama yapma!
-                if (!EventSystem.current.IsPointerOverGameObject())
+                if (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject())
                 {
                     SpawnFood();
                 }
@@ -38,6 +45,8 @@ public class FoodSpawnController : MonoBehaviour
 
         void SpawnFood()
         {
+            if (Camera.main == null) return;
+
             // Farenin ekran üzerindeki konumunu, oyun dünyasındaki konuma çevir
             Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             
@@ -61,6 +70,7 @@ public class FoodSpawnController : MonoBehaviour
 
         public void SelectOt()
         {
+            if (CreatureSpawnController.instance != null) CreatureSpawnController.instance.CancelSelection();
             selectedFoodToSpawn = otPrefab;
             //Debug.Log("Ot seçildi! Tıkladığın yere ot eklenecek.");
             // Cursor.SetCursor(otCursor, Vector2.zero, CursorMode.Auto); // İmleç değişimi (Görseli ekleyince açarız)
@@ -68,6 +78,7 @@ public class FoodSpawnController : MonoBehaviour
 
         public void SelectEt()
         {
+            if (CreatureSpawnController.instance != null) CreatureSpawnController.instance.CancelSelection();
             selectedFoodToSpawn = etPrefab;
             //Debug.Log("Et seçildi! Tıkladığın yere et eklenecek.");
             // Cursor.SetCursor(etCursor, Vector2.zero, CursorMode.Auto); 
@@ -78,5 +89,10 @@ public class FoodSpawnController : MonoBehaviour
             selectedFoodToSpawn = null;
             //Debug.Log("Seçim iptal edildi. İmleç normale döndü.");
             // Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto); // İmleci varsayılana döndür
+        }
+
+        public bool IsSpawning()
+        {
+            return selectedFoodToSpawn != null;
         }
 }

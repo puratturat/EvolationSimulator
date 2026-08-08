@@ -3,7 +3,7 @@ using UnityEngine;
 public class LeaterBrain : MonoBehaviour
 {
     // YENİ DURUMLAR EKLENDİ (SeekingMate, Mating)
-    public enum State { Idle, Wandering, ChasingFood, Eating, SeekingMate, Mating }
+    public enum State { Idle, Wandering, ChasingFood, Eating, SeekingMate, Mating, ChasingPrey, Attacking }
 
     public State currentState;
 
@@ -19,6 +19,11 @@ public class LeaterBrain : MonoBehaviour
     [Header("Engel Aşma (Bıyık Sistemi)")]
     public LayerMask obstacleLayer; // Hangi objelerden kaçacak?
     public float avoidDistance = 1.0f; // Bıyıkların uzunluğu
+
+    [Header("Bölgecilik ve Sürü")]
+    public Vector2 homePoint;        // Son yemek yediği evin koordinatı
+    public bool hasHome = false;       // Evi var mı? (Yoksa göçer)
+    public Transform targetFlock;      // Peşine takılacağı sürü (kardeş) lideri
 
     // Zihinsel değişkenler
     private Vector2 moveDirection;
@@ -41,6 +46,10 @@ public class LeaterBrain : MonoBehaviour
     private Transform targetMate; 
     private CreatureStats mateStats;
 
+    private Transform targetPrey; 
+    private CreatureStats preyStats;
+    private float currentAttackCooldown = 0f;
+
     private CreatureStats stats;
 
     void Start()
@@ -52,70 +61,77 @@ public class LeaterBrain : MonoBehaviour
 
     void Update()
     {
+        if (stats == null || stats.dna == null) return;
+
         EvaluatePriorities();
         ExecuteCurrentState();
 
         // Hareket durumlarını güncelliyoruz
-        stats.isMoving = (currentState == State.Wandering || currentState == State.ChasingFood || currentState == State.SeekingMate);
+        stats.isMoving = (currentState == State.Wandering || currentState == State.ChasingFood || currentState == State.SeekingMate || currentState == State.ChasingPrey);
         UpdateStateLabel();
     }
 
     // 🌟 İŞTE DÜZELTİLMİŞ O MUAZZAM KARAR MEKANİZMASI 🌟
     void EvaluatePriorities()
     {
-        if (currentState == State.Eating || currentState == State.Mating) return;
+        if (currentState == State.Eating || currentState == State.Mating || currentState == State.Attacking) return;
+
+        radarTimer -= Time.deltaTime;
+        if (radarTimer <= 0f)
+        {
+            ScanEnvironment(); // TEK BİR RADAR ATAR, HER ŞEYİ BULUR!
+            radarTimer = radarCooldown; 
+        }
 
         if (stats.currentEnergy < (stats.currentMaxEnergy * 0.5f)) isHungryMode = true;
         else if (stats.currentEnergy >= (stats.currentMaxEnergy * 0.9f)) isHungryMode = false;
 
         bool isCriticallyHungry = stats.currentEnergy < (stats.currentMaxEnergy * 0.3f);
         
-        bool isFertile = (stats.currentStage == LifeStage.Adult) || (stats.currentStage == LifeStage.Old && stats.age <= 17);
+        bool isFertile = stats.currentStage == LifeStage.Adult;
         float dynamicMateThreshold = stats.currentMaxEnergy * (stats.dna.reproduceEnergyThreshold / 100f);
         
-        // 🌟 KARIŞIK GENLER İÇİN ÜREME HAFIZASI (TITREME ÇÖZÜMÜ) 🌟
-        if (isFertile && stats.currentEnergy >= dynamicMateThreshold) 
+        if (isFertile && stats.currentEnergy >= dynamicMateThreshold) isMatingMode = true; 
+        else if (!isFertile || stats.currentEnergy < (dynamicMateThreshold * 0.7f)) isMatingMode = false; 
+
+        if (stats.currentEnergy < (stats.currentMaxEnergy * stats.dna.migrationThreshold) && targetFood == null && targetPrey == null)
         {
-            isMatingMode = true; // Eş arama moduna kilitlendi
-        }
-        else if (!isFertile || stats.currentEnergy < (dynamicMateThreshold * 0.5f)) 
-        {
-            isMatingMode = false; // Enerjisi çok düşerse vazgeçer
+            hasHome = false; 
         }
 
+        // --- HEDEF KARARLARI ---
         if (isCriticallyHungry)
         {
             isMatingMode = false; 
-            radarTimer -= Time.deltaTime;
-            if(radarTimer <= 0f) { SearchForFood(); radarTimer = radarCooldown; }
-            if (currentState != State.ChasingFood && currentState != State.Wandering) ForceWander();
+            // 🌟 YENİ: Açlıktan ölürken radar yemek veya av bulduysa ona koş!
+            if (targetPrey != null) { currentState = State.ChasingPrey; }
+            else if (targetFood != null) { currentState = State.ChasingFood; }
+            else if (currentState != State.Wandering) { ForceWander(); }
             return; 
         }
 
         if (isMatingMode)
         {
-            if (currentState != State.SeekingMate)
-            {
+            if (currentState != State.SeekingMate) 
+            { 
                 currentState = State.SeekingMate; 
-                targetMate = null; 
+                // 🌟 FİX 1 (ALZHEİMER ÇÖZÜMÜ): Buradaki "targetMate = null;" komutunu SİLDİK! Artık hafızası silinmeyecek.
             }
-            radarTimer -= Time.deltaTime;
-            if(radarTimer <= 0f) { SearchForMate(); radarTimer = radarCooldown; }
             return; 
         }
 
         if (isHungryMode)
         {
-            radarTimer -= Time.deltaTime;
-            if(radarTimer <= 0f) { SearchForFood(); radarTimer = radarCooldown; }
-            if (currentState != State.ChasingFood && currentState != State.Wandering) ForceWander();
+            // 🌟 YENİ: Karnı açsa radarın bulduğu yemeğe veya ava koş!
+            if (targetPrey != null) { currentState = State.ChasingPrey; }
+            else if (targetFood != null) { currentState = State.ChasingFood; }
+            else if (currentState != State.Wandering) { ForceWander(); }
             return;
         }
 
-        if (currentState == State.ChasingFood || currentState == State.SeekingMate)
+        if (currentState == State.ChasingFood || currentState == State.SeekingMate || currentState == State.ChasingPrey)
         {
-            targetFood = null;
-            targetMate = null;
+            targetFood = null; targetMate = null; targetPrey = null;
             ChooseNextAction(); 
         }
     }
@@ -123,7 +139,7 @@ public class LeaterBrain : MonoBehaviour
     void ForceWander()
     {
         currentState = State.Wandering;
-        moveDirection = new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)).normalized;
+        SetWanderDirection();
         stateTimer = maxActionTime;
     }
 
@@ -134,31 +150,58 @@ public class LeaterBrain : MonoBehaviour
             case State.Idle:
                 stateTimer -= Time.deltaTime;
                 if (stateTimer <= 0) ChooseNextAction();
-                IdleLookAround(); // 🌟 YENİ: Olduğun yerde dur ve etrafı tara!
+                IdleLookAround(); 
                 break;
                 
             case State.Wandering:
                 stateTimer -= Time.deltaTime;
                 if (stateTimer <= 0) ChooseNextAction();
-                MoveAndRotate(); // Hem dön hem yürü
+                MoveAndRotate(); 
                 break;
                 
             case State.ChasingFood: ChaseFood(); break;
             case State.Eating: EatFood(); break;
             case State.SeekingMate: ChaseMate(); break; 
-            case State.Mating: Mate(); break;           
+            case State.Mating: Mate(); break;
+            
+            // 🌟 YENİ EKLENEN AVCILIK DURUMLARI 🌟
+            case State.ChasingPrey: ChasePrey(); break;
+            case State.Attacking: AttackPrey(); break;          
         }
     }
 
     void ChooseNextAction()
     {
-        // %50 ihtimalle gezinmeye, %50 ihtimalle etrafı izlemeye (Idle) karar ver
         currentState = (Random.value > 0.5f) ? State.Wandering : State.Idle;
-        
-        // 🌟 FİX: Artık Idle durumunda da rastgele bir yöne dönme (tarama) emri veriyoruz!
-        moveDirection = new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)).normalized;
-        
+        SetWanderDirection();
         stateTimer = Random.Range(minActionTime, maxActionTime);
+    }
+
+    // 🌟 YENİ: GEZİNME MOTORU (Göç, Bölgecilik ve Sürü Mantığı)
+    void SetWanderDirection()
+    {
+        // 1. SÜRÜ PSİKOLOJİSİ: Eğer etrafta kanka varsa, SOSYALLİK GENİNE göre karar ver!
+        if (targetFlock != null && currentState == State.Wandering)
+        {
+            // Eğer Sosyallik Geni %80 (0.8f) ise, %80 ihtimalle sürünün peşine takılır, %20 kendi başına takılır.
+            if (Random.value <= stats.dna.sociability)
+            {
+                moveDirection = (targetFlock.position - transform.position).normalized;
+                return;
+            }
+        }
+
+        // 2. BÖLGECİLİK: Eğer yemek yediğimiz bir evimiz varsa, DNA'daki çapa göre ev etrafında turluyoruz.
+        if (hasHome)
+        {
+            Vector2 randomOffset = Random.insideUnitCircle * stats.dna.homeWanderRadius;
+            moveDirection = ((homePoint + randomOffset) - (Vector2)transform.position).normalized;
+        }
+        // 3. GÖÇ (MIGRATION): Eğer ev yoksa ufka doğru yepyeni bir maceraya çık!
+        else
+        {
+            moveDirection = new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)).normalized;
+        }
     }
 
     void MoveAndRotate()
@@ -249,120 +292,203 @@ public class LeaterBrain : MonoBehaviour
         // NOT: Burada transform.Translate YOK! Yani canlı adım atmıyor, sadece olduğu yerde dönüyor.
     }
 
-    // --- YEMEK FONKSİYONLARI ---
-    void SearchForFood()
-    {
-        // En geniş duyumuz hangisiyse o kadar büyük bir çember tarıyoruz
-        float maxRadius = Mathf.Max(stats.dna.visionRadius, stats.dna.smellRadius);
-        Collider2D[] hitColliders = Physics2D.OverlapCircleAll(transform.position, maxRadius);
-        
-        // 🌟 DEĞİŞİM 1: Artık "closestDistance" (En Yakın) yerine "bestScore" (En Yüksek Puan) arıyoruz!
-        float bestSeenScore = -1f;
-        Transform bestSeenTarget = null;
-        FoodObject bestSeenFoodData = null;
 
-        float bestSmelledScore = -1f;
-        Transform bestSmelledTarget = null;
+    // 🌟 4'Ü 1 ARADA RADAR SİSTEMİ (Yemek, Av, Eş ve Sürü)
+    void ScanEnvironment()
+    {
+        float currentScanRadius = Mathf.Max(stats.dna.visionRadius, stats.dna.smellRadius);
+        if (isMatingMode) currentScanRadius *= 3f;
+
+        Collider2D[] hitColliders = Physics2D.OverlapCircleAll(transform.position, currentScanRadius);
+        
+        float bestFoodScore = -1f; Transform bestFoodTarget = null; FoodObject bestFoodData = null; CreatureStats bestPrey = null;
+        float bestMateScore = -1f; Transform bestMateTarget = null; CreatureStats bestMateStats = null;
+        float closestFlockDist = Mathf.Infinity; Transform bestFlockTarget = null;
 
         foreach (var hit in hitColliders)
         {
+            if (hit.gameObject == this.gameObject) continue;
+
+            float dist = Vector2.Distance(transform.position, hit.transform.position);
+            float safeDist = Mathf.Max(dist, 0.1f); 
+            Vector2 dirToTarget = (hit.transform.position - transform.position).normalized;
+            float angleToTarget = Vector2.Angle(transform.up, dirToTarget);
+
+            bool canSee = (dist <= stats.dna.visionRadius && angleToTarget <= stats.dna.visionAngle / 2f);
+            bool canSmell = (dist <= (isMatingMode ? currentScanRadius : stats.dna.smellRadius));
+
+            if (!canSee && !canSmell) continue;
+
             FoodObject food = hit.GetComponent<FoodObject>();
+            CreatureStats otherCreature = hit.GetComponent<CreatureStats>();
+            LeaterBrain otherBrain = hit.GetComponent<LeaterBrain>();
+
             if (food != null)
             {
-                float dist = Vector2.Distance(transform.position, hit.transform.position);
-                float safeDist = Mathf.Max(dist, 0.1f); // 0'a bölme hatasını engellemek için güvenlik
-                
-                Vector2 dirToFood = (hit.transform.position - transform.position).normalized;
-                float angleToFood = Vector2.Angle(transform.up, dirToFood);
+                float desireMult = 0f; float effMult = 0f;
+                if (food.type == FoodType.Plant || food.type == FoodType.PoisonousPlant) { desireMult = (food.type == FoodType.Plant) ? stats.dna.desirePlant : stats.dna.desirePoison; effMult = stats.dna.plantEfficiency; }
+                else if (food.type == FoodType.Meat) { desireMult = stats.dna.desireMeat; effMult = stats.dna.meatEfficiency; }
 
-                // --- 🌟 YENİ: ARZU VE SİNDİRİM ÇARPANLARI 🌟 ---
-                float desireMultiplier = 0f;
-                float efficiencyMultiplier = 0f;
-
-                if (food.type == FoodType.Plant) 
+                float score = (food.currentEnergy * effMult / safeDist) * desireMult;
+                if (score > bestFoodScore) { bestFoodScore = score; bestFoodTarget = hit.transform; bestFoodData = food; bestPrey = null; }
+            }
+            else if (otherCreature != null && otherBrain != null)
+            {
+                // A) EŞ ADAYI MI?
+                if (isMatingMode && otherBrain.currentState == State.SeekingMate)
                 {
-                    desireMultiplier = stats.dna.desirePlant;
-                    efficiencyMultiplier = stats.dna.plantEfficiency;
-                }
-                else if (food.type == FoodType.PoisonousPlant) 
-                {
-                    desireMultiplier = stats.dna.desirePoison;
-                    efficiencyMultiplier = stats.dna.plantEfficiency; 
-                }
-                else if (food.type == FoodType.Meat) 
-                {
-                    desireMultiplier = stats.dna.desireMeat;
-                    efficiencyMultiplier = stats.dna.meatEfficiency;
-                }
-
-                // --- 🌟 YENİ: YAPAY ZEKA KARAR FORMÜLÜ 🌟 ---
-                // Puan = (Enerji * Sindirme Yeteneği / Mesafe) * Psikolojik Arzu
-                float foodScore = (food.currentEnergy * efficiencyMultiplier / safeDist) * desireMultiplier;
-
-                // Eğer canlının bu yemeğe ilgisi (veya sindirimi) 0 ise, bu yemeği tamamen yok say!
-                if (foodScore <= 0) continue; 
-
-                // 1. GÖZLERLE GÖRME KONTROLÜ (Mesafede ve Açıdaysa)
-                if (dist <= stats.dna.visionRadius && angleToFood <= stats.dna.visionAngle / 2f)
-                {
-                    // 🌟 DEĞİŞİM 2: Mesafe kısa mı diye değil, Puanı daha mı yüksek diye bakıyoruz!
-                    if (foodScore > bestSeenScore)
+                    bool isOtherFertile = otherCreature.currentStage == LifeStage.Adult;
+                    if (isOtherFertile)
                     {
-                        bestSeenScore = foodScore; // Yeni en iyi puanı kaydet
-                        bestSeenTarget = hit.transform;
-                        bestSeenFoodData = food;
+                        // 🌟 CİNSEL SEÇİLİM (SEXUAL SELECTION) ALGORİTMASI 🌟
+                        // 1. Temel cazibe: Yakında olmak her zaman ufak bir avantajdır (Enerji tasarrufu)
+                        float mateScore = 10f / safeDist; 
+
+                        // 2. ZEHİR TÜKETİCİLERİ: Kendilerinden daha dayanıklı olanlara aşık olurlar!
+                        if (stats.dna.desirePoison >= 0.3f) 
+                            mateScore += (otherCreature.dna.poisonResistance * 50f);
+
+                        // 3. YIRTICILAR: Güçlü çenesi (yüksek hasarı) ve eti iyi sindirebilenlere ilgi duyar!
+                        if (stats.dna.desireMeat >= 0.35f) 
+                            mateScore += (otherCreature.dna.attackDamageMultiplier) + (otherCreature.dna.meatEfficiency * 20f);
+
+                        // 4. OTÇULLAR: İri kıyım (hayatta kalma şansı yüksek) ve iyi ot sindirenlere ilgi duyar!
+                        if (stats.dna.desirePlant >= 0.4f) 
+                            mateScore += (otherCreature.dna.plantEfficiency * 30f) + (otherCreature.dna.baseSize * 15f);
+
+                        // 5. TÜR (BOYUT) BENZERLİĞİ: Sürü toleransına uygun olanlara (kendi türüne) devasa bir bonus!
+                        // Bu özellik, farenin fille çiftleşmesini engeller ve türlerin kendi içinde "safkan" kalmasını sağlar.
+                        float sizeDiff = Mathf.Abs(stats.dna.baseSize - otherCreature.dna.baseSize);
+                        if (sizeDiff <= stats.dna.flockTolerance) 
+                            mateScore += 40f; 
+
+                        // Puanı en yüksek olan (En cazip olan) eş adayını hafızaya kazı!
+                        if (mateScore > bestMateScore)
+                        {
+                            bestMateScore = mateScore; 
+                            bestMateTarget = hit.transform; 
+                            bestMateStats = otherCreature;
+                        }
+                        continue; 
                     }
                 }
-                // 2. BURUNLA KOKU KONTROLÜ (Göremiyorsak ama koku mesafesindeyse)
-                else if (dist <= stats.dna.smellRadius)
+
+                if (stats.dna.desireMeat > 0.3f && stats.dna.meatEfficiency > 0.2f)
                 {
-                    if (foodScore > bestSmelledScore)
+                    float courage = stats.dna.baseSize / otherCreature.dna.baseSize;
+                    if (courage > 0.6f)
                     {
-                        bestSmelledScore = foodScore; // Yeni en iyi koku puanını kaydet
-                        bestSmelledTarget = hit.transform;
+                        float score = (courage * stats.dna.desireMeat * stats.dna.meatEfficiency / safeDist) * 50f;
+                        if (score > bestFoodScore) { bestFoodScore = score; bestFoodTarget = hit.transform; bestFoodData = null; bestPrey = otherCreature; }
+                        continue;
+                    }
+                }
+
+                if (!isMatingMode && !isHungryMode && canSee) 
+                {
+                    float sizeDiff = Mathf.Abs(stats.dna.baseSize - otherCreature.dna.baseSize);
+                    if (sizeDiff <= stats.dna.flockTolerance && dist < closestFlockDist) 
+                    {
+                        closestFlockDist = dist; bestFlockTarget = hit.transform;
                     }
                 }
             }
         }
 
-        // --- KARAR MEKANİZMASI (Senin harika Fix'in dahil, birebir aynı!) ---
-        if (bestSeenTarget != null) 
+        // 🌟 FİX 2: SONUÇLARI KAYDET (ASLA currentState DEĞİŞTİRME!) 🌟
+        // Radar sadece hedefleri bulur, beyni (State) karıştırmaz. Kararı üstteki EvaluatePriorities verir.
+        if (bestFoodTarget != null) 
         { 
-            targetFood = bestSeenTarget; 
-            currentFoodData = bestSeenFoodData; 
-            currentState = State.ChasingFood; 
+            if (bestPrey != null) { targetPrey = bestFoodTarget; preyStats = bestPrey; targetFood = null; }
+            else { targetFood = bestFoodTarget; currentFoodData = bestFoodData; targetPrey = null; }
         }
-        else if (bestSmelledTarget != null && currentState != State.ChasingFood)
+        
+        // ÖNEMLİ: Sadece YENİ bir eş bulduysa hafızayı günceller, bulamadıysa (null ise) eskisine koşmaya devam eder.
+        if (bestMateTarget != null) { targetMate = bestMateTarget; mateStats = bestMateStats; }
+        
+        targetFlock = bestFlockTarget; 
+    }
+
+    // --- AVCILIK FONKSİYONLARI ---
+    void ChasePrey()
+    {
+        if (targetPrey == null || preyStats == null || preyStats.currentHealth <= 0)
         {
-            moveDirection = (bestSmelledTarget.position - transform.position).normalized;
-            currentState = State.Wandering;
+            targetPrey = null;
+            preyStats = null;
+            currentState = State.Idle;
+            return;
+        }
+        
+        // 🌟 FİX: Dinamik Avlanma Mesafesi 🌟
+        float dynamicAttackDistance = stats.dna.attackDistance + ((stats.dna.baseSize + preyStats.dna.baseSize) * 0.4f);
+
+        if (Vector2.Distance(transform.position, targetPrey.position) <= dynamicAttackDistance)
+        {
+            currentState = State.Attacking;
+            return;
+        }
+
+        moveDirection = (targetPrey.position - transform.position).normalized;
+        MoveAndRotate();
+    }
+
+    void AttackPrey()
+    {
+        if (targetPrey == null || preyStats == null || preyStats.currentHealth <= 0) 
+        { 
+            targetPrey = null;
+            preyStats = null;
+            currentState = State.Idle; 
+            return; 
+        }
+
+        float dynamicAttackDistance = stats.dna.attackDistance + ((stats.dna.baseSize + preyStats.dna.baseSize) * 0.4f);
+        if (Vector2.Distance(transform.position, targetPrey.position) > dynamicAttackDistance)
+        {
+            currentState = State.ChasingPrey; 
+            return;
+        }
+
+        float attackEnergyCost = stats.dna.baseSize * stats.dna.attackEnergyCost;
+        if (stats.currentEnergy < attackEnergyCost)
+        {
+            targetPrey = null;
+            preyStats = null;
+            currentState = State.Idle;
+            return;
+        }
+
+        currentAttackCooldown -= Time.deltaTime;
+        
+        if (currentAttackCooldown <= 0)
+        {
+            preyStats.currentHealth -= stats.currentAttackDamage;
             
-            // 🌟 FİX 1: Kokuyu aldığı sürece "Gezinme Süresini" sürekli fulle! 
-            stateTimer = maxActionTime; 
+            // 🌟 ARTIK DNA'DAN OKUYOR: Genetik Enerji Bedeli
+            stats.currentEnergy = Mathf.Max(0f, stats.currentEnergy - attackEnergyCost);
+
+            currentAttackCooldown = stats.dna.attackCooldown; // Soğuma süresini DNA'dan alıp sıfırla
         }
     }
 
     void ChaseFood()
-        {
-            // GÜVENLİK: Eğer yemeğe koşarken yemek aniden yok olduysa (başkası yutmuş veya çürümüşse)
-            if (targetFood == null) 
-            { 
-                currentState = State.Idle; // Aramayı bırak ve bekleme moduna geç
-                return; 
-            }
-            
-            // Eğer yemeğe yeterince yaklaştıysak yemeye başla
-            if (Vector2.Distance(transform.position, targetFood.position) <= eatDistance)
-            {
-                currentState = State.Eating;
-                eatTimer = stats.dna.eatDuration; // Yemek çiğneme süresini DNA'dan alıyoruz
-                return;
-            }
+    {
+        if (targetFood == null) { currentState = State.Idle; return; }
+        
+        // 🌟 FİX: Dinamik Yemek Mesafesi 🌟
+        float dynamicEatDistance = eatDistance + (stats.dna.baseSize * 0.4f);
 
-            // Yakın değilsek yemeğe doğru yürümeye devam et
-            moveDirection = (targetFood.position - transform.position).normalized;
-            MoveAndRotate();
+        if (Vector2.Distance(transform.position, targetFood.position) <= dynamicEatDistance)
+        {
+            currentState = State.Eating;
+            eatTimer = stats.dna.eatDuration; 
+            return;
         }
+
+        moveDirection = (targetFood.position - transform.position).normalized;
+        MoveAndRotate();
+    }
 
     void EatFood()
     {
@@ -385,6 +511,11 @@ public class LeaterBrain : MonoBehaviour
 
                 // Enerjiyi doğru sindirim katsayısıyla al! 
                 stats.currentEnergy += gainedEnergy * activeEfficiency;
+
+                // 🌟 YENİ: YEMEK YEDİĞİN YERİ EVİN YAP!
+                homePoint = transform.position;
+                hasHome = true;
+
                 if (stats.currentEnergy > stats.currentMaxEnergy) stats.currentEnergy = stats.currentMaxEnergy;
                 
                 // Büyümeye de ne yediğini ve ne kadar sindirebildiğini yolla (HATA BURADAYDI, DÜZELTİLDİ)
@@ -404,116 +535,46 @@ public class LeaterBrain : MonoBehaviour
         }
     }
 
-    // --- ÜREME FONKSİYONLARI ---
-    void SearchForMate()
-    {
-        float maxRadius = Mathf.Max(stats.dna.visionRadius, stats.dna.smellRadius);
-        Collider2D[] hitColliders = Physics2D.OverlapCircleAll(transform.position, maxRadius);
-        
-        float closestSeenDistance = Mathf.Infinity;
-        Transform bestSeenTarget = null;
-        CreatureStats bestSeenStats = null;
-
-        float closestSmelledDistance = Mathf.Infinity;
-        Transform bestSmelledTarget = null;
-
-        foreach (var hit in hitColliders)
-        {
-            if (hit.gameObject == this.gameObject) continue;
-            
-            CreatureStats otherStats = hit.GetComponent<CreatureStats>();
-            LeaterBrain otherBrain = hit.GetComponent<LeaterBrain>();
-
-            if (otherStats != null && otherBrain != null)
-            {
-                bool isOtherFertile = (otherStats.currentStage == LifeStage.Adult) || (otherStats.currentStage == LifeStage.Old && otherStats.age <= 17);
-                if (!isOtherFertile || otherBrain.currentState != State.SeekingMate) continue;
-
-                float dist = Vector2.Distance(transform.position, hit.transform.position);
-                Vector2 dirToMate = (hit.transform.position - transform.position).normalized;
-                float angleToMate = Vector2.Angle(transform.up, dirToMate);
-
-                // 1. GÖRME KONTROLÜ
-                if (dist <= stats.dna.visionRadius && angleToMate <= stats.dna.visionAngle / 2f)
-                {
-                    if (dist < closestSeenDistance) 
-                    { 
-                        closestSeenDistance = dist; 
-                        bestSeenTarget = hit.transform; 
-                        bestSeenStats = otherStats; 
-                    }
-                }
-                // 2. KOKU KONTROLÜ (Görmüyor ama feromon kokusu alıyorsa)
-                else if (dist <= stats.dna.smellRadius)
-                {
-                    if (dist < closestSmelledDistance)
-                    {
-                        closestSmelledDistance = dist;
-                        bestSmelledTarget = hit.transform;
-                    }
-                }
-            }
-        }
-        
-        // --- KARAR MEKANİZMASI ---
-        if (bestSeenTarget != null) 
-        { 
-            targetMate = bestSeenTarget; 
-            mateStats = bestSeenStats; 
-        }
-        else if (bestSmelledTarget != null && targetMate == null)
-        {
-            // Eşi görmedi ama kokusunu aldı, o yöne doğru dön ve yürümeye başla!
-            moveDirection = (bestSmelledTarget.position - transform.position).normalized;
-            currentState = State.Wandering;
-            
-            // 🌟 FİX 1 (ALZHEİMER ÇÖZÜMÜ BURADA) 🌟
-            // Eşin kokusunu (feromonları) aldığı sürece süreyi fullüyoruz ki 
-            // aniden "ben nereye gidiyordum ya" diyip dönmesin.
-            stateTimer = maxActionTime; 
-        }
-    }
 
     void ChaseMate()
+    {
+        if (targetMate == null || mateStats == null)
         {
-            // 🌟 ÇÖZÜM: HEDEF YOKSA BİLE RENGİNİ BOZMADAN RASTGELE GEZİNEREK EŞ ARA
-            if (targetMate == null || mateStats == null)
+            stateTimer -= Time.deltaTime;
+            if (stateTimer <= 0)
             {
-                stateTimer -= Time.deltaTime;
-                if (stateTimer <= 0)
-                {
-                    moveDirection = new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)).normalized;
-                    stateTimer = Random.Range(minActionTime, maxActionTime);
-                }
-                MoveAndRotate();
-                return;
+                moveDirection = new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)).normalized;
+                stateTimer = Random.Range(minActionTime, maxActionTime);
             }
-
-            LeaterBrain mateBrain = targetMate.GetComponent<LeaterBrain>();
-            
-            // Eş aniden açlıktan dolayı modu kapatırsa, hedefi sil ve üstteki "arama" döngüsüne dön
-            if (mateBrain == null || mateBrain.currentState != State.SeekingMate)
-            {
-                targetMate = null;
-                mateStats = null;
-                return;
-            }
-
-            if (Vector2.Distance(transform.position, targetMate.position) <= mateDistance)
-            {
-                currentState = State.Mating;
-                mateTimer = mateDuration; 
-                
-                mateBrain.currentState = State.Mating;
-                mateBrain.mateTimer = mateDuration;
-                mateBrain.targetMate = this.transform; 
-                mateBrain.mateStats = this.stats;
-                return;
-            }
-
-            moveDirection = (targetMate.position - transform.position).normalized;
             MoveAndRotate();
+            return;
         }
+
+        LeaterBrain mateBrain = targetMate.GetComponent<LeaterBrain>();
+        if (mateBrain == null || mateBrain.currentState != State.SeekingMate)
+        {
+            targetMate = null; mateStats = null; return;
+        }
+
+        // 🌟 FİX: Çarpışma Engelleyici (Dinamik Mesafe) 🌟
+        // İki canlının boyutunun yarısını mesafeye ekliyoruz, böylece göbekleri devasa bile olsa rahatça eşleşiyorlar!
+        float dynamicMateDistance = mateDistance + ((stats.dna.baseSize + mateStats.dna.baseSize) * 0.4f);
+
+        if (Vector2.Distance(transform.position, targetMate.position) <= dynamicMateDistance)
+        {
+            currentState = State.Mating;
+            mateTimer = mateDuration; 
+            
+            mateBrain.currentState = State.Mating;
+            mateBrain.mateTimer = mateDuration;
+            mateBrain.targetMate = this.transform; 
+            mateBrain.mateStats = this.stats;
+            return;
+        }
+
+        moveDirection = (targetMate.position - transform.position).normalized;
+        MoveAndRotate();
+    }
 
     void Mate()
     {
@@ -534,7 +595,7 @@ public class LeaterBrain : MonoBehaviour
             if (stats.currentEnergy > stats.currentMaxEnergy) stats.currentEnergy = stats.currentMaxEnergy;
 
             // Bebek sadece BİR kere doğsun diye, ID'si büyük olan taraf doğumu üstlenir
-            if (gameObject.GetHashCode() > targetMate.gameObject.GetHashCode())
+            if (gameObject.GetEntityId() > targetMate.gameObject.GetEntityId())
             {
                 Vector3 spawnPosition = transform.position + new Vector3(Random.Range(-0.5f, 0.5f), Random.Range(-0.5f, 0.5f), 0f);
                 
@@ -594,6 +655,8 @@ public class LeaterBrain : MonoBehaviour
             else if (currentState == State.ChasingFood) stats.currentStateName = "<color=#FF8C00>Yemeğe Koşuyor!</color>";
             else if (currentState == State.Eating) stats.currentStateName = "<color=#32CD32>Yemek Yiyor...</color>";
             else if (currentState == State.Mating) stats.currentStateName = "<color=#FF00FF>Çiftleşiyor! </color>";
+            else if (currentState == State.ChasingPrey) stats.currentStateName = "<color=#8B0000><b>AV KOVALIYOR!</b></color>";
+            else if (currentState == State.Attacking) stats.currentStateName = "<color=#FF0000><b>SALDIRIYOR!</b></color>";
             else if (currentState == State.SeekingMate) 
             {
                 // Ekranda gerçekten eşi bulup bulmadığını daha net anlaman için ufak bir detay
@@ -602,31 +665,64 @@ public class LeaterBrain : MonoBehaviour
             }
         }
         
-    void OnDrawGizmos()
+void OnDrawGizmos()
     {
         CreatureStats myStats = GetComponent<CreatureStats>();
         if (myStats == null || DebugController.instance == null || DebugController.instance.selectedCreature != myStats) return;
         
         if (myStats.dna != null)
         {
-            // 🌟 YENİ: KOKU ÇEMBERİ (Yarı saydam yeşil)
-            Gizmos.color = new Color(0f, 1f, 0f, 0.15f); 
+            // 🟢 KOKU ÇEMBERİ (Yarı saydam yeşil)
+            Gizmos.color = new Color(0f, 1f, 0f, 0.12f); 
             Gizmos.DrawWireSphere(transform.position, myStats.dna.smellRadius);
 
-            // GÖRÜŞ HUNİSİ (Sarı)
+            // 🟡 GÖRÜŞ HUNİSİ (Sarı)
             Gizmos.color = Color.yellow;
             Vector3 rightLimit = Quaternion.Euler(0, 0, -myStats.dna.visionAngle / 2f) * transform.up;
             Vector3 leftLimit = Quaternion.Euler(0, 0, myStats.dna.visionAngle / 2f) * transform.up;
 
             Gizmos.DrawLine(transform.position, transform.position + rightLimit * myStats.dna.visionRadius);
             Gizmos.DrawLine(transform.position, transform.position + leftLimit * myStats.dna.visionRadius);
-            // Mesafenin ucunu da yay şeklinde belli etmek istersen ufak bir radar çizgisi atabiliriz ama bu kadarı yeterli
+
+            // 🔴 SALDIRI MENZİLİ (Yarı saydam kırmızı çember)
+            Gizmos.color = new Color(1f, 0f, 0f, 0.25f);
+            Gizmos.DrawWireSphere(transform.position, myStats.dna.attackDistance);
+
+            // 🌟 1. MAVİ EV BÖLGESİ (Bölgecilik Görselleştirmesi) 🌟
+            if (hasHome)
+            {
+                Vector3 homeV3 = new Vector3(homePoint.x, homePoint.y, 0f);
+
+                // Evin sınır çapını yarı saydam mavi bir daireyle çiziyoruz
+                Gizmos.color = new Color(0f, 0.6f, 1f, 0.20f);
+                Gizmos.DrawWireSphere(homeV3, myStats.dna.homeWanderRadius);
+
+                // Evin tam merkezine küçük bir mavi çekirdek koyuyoruz
+                Gizmos.color = Color.blue;
+                Gizmos.DrawWireSphere(homeV3, 0.25f);
+
+                // Canlıdan evine doğru ince, kesik hissi veren mavi bir bağ çizgisi çekiyoruz
+                Gizmos.color = new Color(0f, 0.4f, 1f, 0.5f);
+                Gizmos.DrawLine(transform.position, homeV3);
+            }
         }
 
         if (targetFood != null) { Gizmos.color = Color.red; Gizmos.DrawLine(transform.position, targetFood.position); }
         if (targetMate != null) { Gizmos.color = Color.magenta; Gizmos.DrawLine(transform.position, targetMate.position); }
+        if (targetPrey != null) { Gizmos.color = new Color(0.6f, 0f, 0f); Gizmos.DrawLine(transform.position, targetPrey.position); }
 
-        // 🌟 BIYIKLARI ÇİZME (Mavi Çizgiler)
+        // 🌟 2. SÜRÜ LİDERİ TAKİP ÇİZGİSİ (Turkuaz Çizgi) 🌟
+        if (targetFlock != null)
+        {
+            // Takip ettiği arkadaşına/liderine turkuaz bir çizgi çeker
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawLine(transform.position, targetFlock.position);
+
+            // Sürü liderinin etrafına küçük bir halka çizerek onu "Lider" olarak işaretler
+            Gizmos.DrawWireSphere(targetFlock.position, 0.45f);
+        }
+
+        // 🔵 BIYIKLAR (Mavi Çizgiler)
         Gizmos.color = Color.cyan;
         Vector3 fwd = transform.up;
         Vector3 r = Quaternion.Euler(0, 0, -30) * fwd;

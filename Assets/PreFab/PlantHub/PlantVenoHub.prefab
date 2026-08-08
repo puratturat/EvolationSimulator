@@ -14,7 +14,7 @@ PrefabInstance:
       objectReference: {fileID: 4587388242250160587, guid: 3b2e74579abe0884090030c381dbf339, type: 3}
     - target: {fileID: 2222587442467990921, guid: d2bb6c9928addbd41ac16c1c345cd372, type: 3}
       propertyPath: maxFoodLimit
-      value: 10
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 2222587442467990921, guid: d2bb6c9928addbd41ac16c1c345cd372, type: 3}
       propertyPath: spawnInterval

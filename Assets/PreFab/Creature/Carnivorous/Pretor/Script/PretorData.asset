@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ff51072c463024b40abe25cbfa9a44cd, type: 3}
+  m_Name: PretorData
+  m_EditorClassIdentifier: Assembly-CSharp::CreatureData
+  skinColor: {r: 0.9716981, g: 0.0820626, b: 0, a: 1}
+  baseSize: 1.5
+  maxHealth: 200
+  maxEnergy: 300
+  healingRate: 0.7
+  healingEnergyCost: 2
+  poisonResistance: 0
+  desirePlant: 0
+  desirePoison: 0
+  desireMeat: 1
+  moveSpeed: 12
+  plantEfficiency: 0
+  meatEfficiency: 1.5
+  eatDuration: 2
+  idleEnergyDrain: 3
+  moveEnergyDrain: 2
+  visionRadius: 18
+  visionAngle: 120
+  visionEnergyTax: 0.1
+  smellRadius: 25
+  reproduceEnergyThreshold: 40
+  reproductionEnergyCost: 40

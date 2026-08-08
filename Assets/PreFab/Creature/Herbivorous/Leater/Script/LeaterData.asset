@@ -16,9 +16,17 @@ MonoBehaviour:
   baseSize: 1
   maxHealth: 200
   maxEnergy: 400
+  homeWanderRadius: 5
+  migrationThreshold: 0.4
+  sociability: 0.5
+  flockTolerance: 0.4
   healingRate: 2
   healingEnergyCost: 0.7
   poisonResistance: 0
+  attackDistance: 1.5
+  attackCooldown: 1
+  attackDamageMultiplier: 50
+  attackEnergyCost: 3
   desirePlant: 1
   desirePoison: 0
   desireMeat: 0

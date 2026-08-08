@@ -14,8 +14,13 @@ public class CreatureStats : MonoBehaviour
     public float currentHealth;
     public float currentEnergy;
     public float currentSpeed;
+    
+    public float currentAttackDamage; 
+    public float currentHealingRate;  
+
     public string currentStateName = "Doğuyor...";
     public bool isMoving; 
+    
 
     [Header("Büyüme ve Yaş Sistemi")]
     public int age = 0;
@@ -51,7 +56,6 @@ public class CreatureStats : MonoBehaviour
             UpdateLifeStage(); 
             currentHealth = currentMaxHealth;
             currentEnergy = currentMaxEnergy;
-            currentSpeed = dna.moveSpeed;
         }
         else
         {
@@ -70,7 +74,7 @@ public class CreatureStats : MonoBehaviour
 
             if (currentEnergy > 0)
             {
-                currentSpeed = dna.moveSpeed; 
+                currentSpeed = CalculateCurrentSpeed();
                 float metabolismTax = dna.visionRadius * dna.visionEnergyTax;
 
                 // 1. Standart Enerji Harcaması (Metabolizma)
@@ -81,7 +85,7 @@ public class CreatureStats : MonoBehaviour
                 if (currentHealth < currentMaxHealth)
                 {
                     // Saniyede ne kadar can iyileşecek?
-                    float healAmount = dna.healingRate * Time.deltaTime;
+                    float healAmount = currentHealingRate * Time.deltaTime;
                     
                     // İyileşme enerjiden ne kadar yiyecek? (1 birim can = healingEnergyCost)
                     float energyCostForHeal = healAmount * dna.healingEnergyCost;
@@ -107,7 +111,7 @@ public class CreatureStats : MonoBehaviour
             else
             {
                 currentEnergy = 0f; 
-                currentSpeed = dna.moveSpeed / 2f; 
+                currentSpeed = CalculateCurrentSpeed() / 2f; 
                 currentHealth -= starvationDamage * Time.deltaTime; 
             }
 
@@ -133,55 +137,85 @@ public class CreatureStats : MonoBehaviour
         }
     }
 
+    // 🌟 YENİ NESİL BİYOLOJİK YAŞLANMA VE ÖMÜR MOTORU 🌟
     public void UpdateLifeStage()
     {
-        if (age < 3) currentStage = LifeStage.Young;
-        else if (age >= 3 && age < 15) currentStage = LifeStage.Adult;
+        // 1. ÖMÜR AYARLARI: Yetişkinlik dönemi genişletildi, yaşlılık sınırı 40'a çekildi!
+        if (age < 6) currentStage = LifeStage.Young;
+        else if (age >= 6 && age <= 40) currentStage = LifeStage.Adult;
         else currentStage = LifeStage.Old; 
 
         float ageMultiplier = 1f;
         float sizeMultiplier = 1f; 
 
-        switch (age)
+        if (currentStage == LifeStage.Young)
         {
-            case 0: ageMultiplier = 0.5f; sizeMultiplier = 0.5f; break;  
-            case 1: ageMultiplier = 0.7f; sizeMultiplier = 0.7f; break;  
-            case 2: ageMultiplier = 0.9f; sizeMultiplier = 0.9f; break;  
-            case 3: 
-            case 4: ageMultiplier = 1.0f; sizeMultiplier = 1.0f; break;  
-            case 5: 
-            case 6: ageMultiplier = 1.1f; sizeMultiplier = 1.1f; break;  
-            case 7: 
-            case 8: 
-            case 9: 
-            case 10: 
-            case 11: ageMultiplier = 1.2f; sizeMultiplier = 1.2f; break; 
-            case 12: 
-            case 13: ageMultiplier = 1.1f; sizeMultiplier = 1.2f; break; 
-            case 14: ageMultiplier = 1.0f; sizeMultiplier = 1.2f; break; 
-            case 15: ageMultiplier = 0.9f; sizeMultiplier = 1.2f; break; 
-            case 16: ageMultiplier = 0.7f; sizeMultiplier = 1.2f; break; 
-            case 17: ageMultiplier = 0.5f; sizeMultiplier = 1.2f; break; 
-            default: ageMultiplier = 0.2f; sizeMultiplier = 1.2f; break; 
+            sizeMultiplier = 0.5f + (age * 0.1f); // 5 yaşında 1.0f tam boyuta ulaşır
+            ageMultiplier = 0.5f + (age * 0.1f);
+            ageEnergyDrainMultiplier = 0.6f + (age * 0.08f);
+        }
+        else if (currentStage == LifeStage.Adult)
+        {
+            sizeMultiplier = 1.0f;
+            if (age >= 15 && age <= 30) ageMultiplier = 1.2f; // Prime dönem gücü
+            else ageMultiplier = 1.0f;
+            ageEnergyDrainMultiplier = 1.0f;
+        }
+        else // LifeStage.Old
+        {
+            sizeMultiplier = 1.0f;
+            int yearsIntoOldAge = age - 40;
+            float decay = yearsIntoOldAge * 0.025f; // Her 10 yaşta bir %25 çöküş
+            ageMultiplier = Mathf.Max(0.15f, 1.0f - decay);
+            ageEnergyDrainMultiplier = 1.2f + (yearsIntoOldAge * 0.05f); // Dedelerin metabolizma penaltısı
         }
 
-        currentMaxHealth = dna.maxHealth * ageMultiplier;
-        currentMaxEnergy = dna.maxEnergy * ageMultiplier;
+        // =========================================================================
+        // 🌟 2. ARKETİP / SINIF SİNERJİ SİSTEMİ (TÜRLEŞME KATALİZÖRÜ) 🌟
+        // =========================================================================
+        
+        // A) 🌿 OTÇUL SİNERJİSİ: Ota ilgi ve sindirim birleşirse can, enerji ve boyut tavan yapar!
+        float herbivoreFocus = dna.desirePlant * dna.plantEfficiency; // Maks 2.0
+        float herbivoreHealthBonus = herbivoreFocus * 0.40f;          // Maks +%80 Can bonusu
+        float herbivoreEnergyBonus = herbivoreFocus * 0.30f;          // Maks +%60 Enerji bonusu
+        float herbivoreSizeBonus = herbivoreFocus * 0.20f;            // Maks +%40 Devleşme bonusu
 
-        // 🌟 4. KRİTİK FİX: Yaşa bağlı boyutu, DNA'daki GENETİK BOYUT (baseSize) ile çarpıyoruz!
-        // Böylece mutasyonla devleşen türler gerçekten dev, cüceleşenler minik olacak.
-        float finalSize = sizeMultiplier * dna.baseSize;
+        // =========================================================================
+        // 3. STATLARIN AKTİF ATANMASI
+        // =========================================================================
+        currentMaxHealth = (dna.maxHealth * (1f + herbivoreHealthBonus)) * ageMultiplier;
+        currentMaxEnergy = (dna.maxEnergy * (1f + herbivoreEnergyBonus)) * ageMultiplier;
+
+        // Boyutlandırma: Otçullara ekstra devleşme payı veriliyor
+        float finalSize = sizeMultiplier * dna.baseSize * (1f + herbivoreSizeBonus);
         transform.localScale = new Vector3(finalSize, finalSize, finalSize);
 
-        if (age < 3) 
-            ageEnergyDrainMultiplier = 0.6f + (age * 0.15f); 
-        else if (age >= 3 && age < 15) 
-            ageEnergyDrainMultiplier = 1f + ((age - 3) * 0.02f); 
-        else 
-            ageEnergyDrainMultiplier = 1.3f + ((age - 15) * 0.1f); 
+        // Dinamik Sinerji Statlarını Güncelleme
+        currentSpeed = CalculateCurrentSpeed();
+        currentAttackDamage = CalculateCurrentAttackDamage();
+        currentHealingRate = CalculateCurrentHealingRate();
 
+        // Güvenlik taşma kontrolleri
         if (currentHealth > currentMaxHealth) currentHealth = currentMaxHealth;
         if (currentEnergy > currentMaxEnergy) currentEnergy = currentMaxEnergy;
+    }
+
+    float CalculateCurrentSpeed()
+    {
+        float predatorFocus = dna.desireMeat * dna.meatEfficiency;
+        return dna.moveSpeed * (1f + (predatorFocus * 0.35f));
+    }
+
+    float CalculateCurrentAttackDamage()
+    {
+        float predatorFocus = dna.desireMeat * dna.meatEfficiency;
+        return (dna.baseSize * dna.attackDamageMultiplier) * (1f + (predatorFocus * 0.50f));
+    }
+
+    float CalculateCurrentHealingRate()
+    {
+        float toxicovoreFocus = dna.desirePoison * dna.poisonResistance;
+        return dna.healingRate * (1f + (toxicovoreFocus * 0.80f));
     }
 
     void Die()
@@ -225,50 +259,49 @@ public class CreatureStats : MonoBehaviour
         Destroy(gameObject);
     }
 
-    // 🌟 EVRİM MOTORU: Yavru doğduğu an çalışır ve DNA'sını saptırır 🌟
+
+    // 🌟 EVRİM MOTORU: Yavru doğduğu an çalışır ve melez genlerini saptırır 🌟
     public void ApplyMutation()
     {
-        // 1. BOYUT VE GÜÇ MUTASYONU 
-        float sizeMut = Random.Range(-0.05f, 0.05f); 
+        dna.EnsureBaseMetabolism();
+
+        // 🌟 BİYOLOJİK YÖNELİM BİASLARI (Zar Hileleri) 🌟
+        // Ebeveynin yönelimi ne kadar güçlüyse, sonraki neslin o sınıfa ait mutasyon şansı o kadar katlanır!
+        float meatBias = (dna.desireMeat * dna.meatEfficiency) * 0.05f;      // Maks +0.10 mutasyon kıyağı
+        float plantBias = (dna.desirePlant * dna.plantEfficiency) * 0.05f;   // Maks +0.10 mutasyon kıyağı
+        float poisonBias = (dna.desirePoison * dna.poisonResistance) * 0.05f;// Maks +0.05 mutasyon kıyağı
+
+        // 1. BOYUT VE GÜÇ MUTASYONU (Otçulların devleşme eğilimi vardır)
+        float sizeMut = Random.Range(-0.05f, 0.05f) + plantBias; 
         dna.baseSize += dna.baseSize * sizeMut;
         dna.maxHealth += dna.maxHealth * sizeMut;
         dna.maxEnergy += dna.maxEnergy * sizeMut;
         dna.moveSpeed -= dna.moveSpeed * (sizeMut * 0.5f); 
-        dna.idleEnergyDrain += dna.idleEnergyDrain * sizeMut; 
+        dna.baseIdleEnergyDrain += dna.baseIdleEnergyDrain * sizeMut; 
 
-        // 2. SİNDİRİM VERİMLİLİĞİ MUTASYONU (Et vs Ot Tahterevallisi)
-        float plantMut = Random.Range(-0.05f, 0.05f);
-        dna.plantEfficiency += dna.plantEfficiency * plantMut;
-
-        // 🌟 FİX 1: ET SİNDİRİMİ ÇOK DAHA NADİR UYANACAK 🌟
-        if (dna.meatEfficiency <= 0.01f) 
-        {
-            // Eğer canlı saf otçulsa, et sindirim geninin uyanması için sadece %20 ihtimali var!
-            if (Random.value < 0.20f) 
-            {
-                dna.meatEfficiency += Random.Range(0.01f, 0.03f); 
-            }
-        }
+        // 2. SİNDİRİM VERİMLİLİĞİ (KATI MİDE KAPASİTESİ VE TAHTEREVALLİ KURALI)
+        dna.plantEfficiency += Random.Range(-0.05f, 0.05f) + plantBias;
+        
+        if (dna.meatEfficiency <= 0.01f && Random.value < (0.20f + (plantBias * -1.5f))) // Otçullarda et geni uyanması zorlaşır
+            dna.meatEfficiency += Random.Range(0.01f, 0.05f);
         else 
+            dna.meatEfficiency += Random.Range(-0.05f, 0.05f) + meatBias; // Etçillerde et verimi mutasyonları hep pozitif kayar
+
+        dna.plantEfficiency = Mathf.Max(0f, dna.plantEfficiency);
+        dna.meatEfficiency = Mathf.Max(0f, dna.meatEfficiency);
+
+        // TAHETEREVALLİ: Mide enzimleri toplamı 2.0'yi aşamaz!
+        float totalEfficiency = dna.plantEfficiency + dna.meatEfficiency;
+        if (totalEfficiency > 2f)
         {
-            // Eğer gen zaten uyanmışsa (önceki nesillerden), normal mutasyonuna devam eder
-            float meatMut = Random.Range(-0.05f, 0.05f);
-            dna.meatEfficiency += dna.meatEfficiency * meatMut;
+            dna.plantEfficiency = (dna.plantEfficiency / totalEfficiency) * 2f;
+            dna.meatEfficiency = (dna.meatEfficiency / totalEfficiency) * 2f;
         }
 
-        // Sınırlandırmalar
-        dna.plantEfficiency = Mathf.Clamp(dna.plantEfficiency, 0f, 2f);
-        dna.meatEfficiency = Mathf.Clamp(dna.meatEfficiency, 0f, 2f);
-
-        // 🌟 HEPÇİL VERGİSİ (OMNIVORE TAX) 🌟
-        float omnivoreTax = (dna.plantEfficiency * dna.meatEfficiency) * 0.05f; 
-        dna.idleEnergyDrain += omnivoreTax; 
-            
-        // Yemek yeme süresi 
         dna.eatDuration += dna.eatDuration * (Random.Range(-0.05f, 0.05f));
 
-        // 3. GÖRÜŞ ALANI MUTASYONU 
-        float visionMut = Random.Range(-0.1f, 0.1f);
+        // 3. GÖRÜŞ VE KOKU MUTASYONU (Etçillerin duyuları keskinleşir)
+        float visionMut = Random.Range(-0.1f, 0.1f) + meatBias;
         dna.visionRadius += dna.visionRadius * visionMut;
         dna.visionAngle -= dna.visionAngle * (visionMut * 0.8f); 
         dna.visionAngle += Random.Range(-10f, 10f); 
@@ -276,32 +309,37 @@ public class CreatureStats : MonoBehaviour
         float totalVisionArea = dna.visionRadius * (dna.visionAngle / 360f); 
         dna.visionEnergyTax = totalVisionArea * 0.01f;
 
-        // 4. KOKU/SEZGİ MUTASYONU 
-        float smellMut = Random.Range(-0.08f, 0.08f);
+        float smellMut = Random.Range(-0.08f, 0.08f) + meatBias;
         dna.smellRadius += dna.smellRadius * smellMut;
-        float smellTax = dna.smellRadius * 0.005f; 
-        dna.idleEnergyDrain += smellTax;
         
-        // 5. İYİLEŞME MUTASYONU 
-        float healMut = Random.Range(-0.05f, 0.05f);
+        // 4. İYİLEŞME MUTASYONU (Zehirciler inanılmaz bir yenilenme kazanır)
+        float healMut = Random.Range(-0.05f, 0.05f) + poisonBias;
         dna.healingRate += dna.healingRate * healMut;
         dna.healingEnergyCost += dna.healingEnergyCost * (healMut * 1.5f);
 
-        // 🌟 FİX 2: ARZU VE ZEHİR MUTASYONLARI YAVAŞLATILDI 🌟
-        // Zehir arzusu artık nesil başına maks %2 değişebilir. 
-        dna.desirePoison += Random.Range(-0.02f, 0.02f);
-        dna.desirePoison = Mathf.Clamp(dna.desirePoison, 0f, 1f);
+        // 5. ÜÇLÜ ARZU SİSTEMİ (PASTA DİLİMİ MANTIĞI)
+        dna.desirePlant += Random.Range(-0.05f, 0.05f);
+        dna.desirePoison += Random.Range(-0.05f, 0.05f);
+        dna.desireMeat += Random.Range(-0.05f, 0.05f) + meatBias;
 
-        // Tahterevalli mantığı: Kalan tüm ilgi otomatik olarak Normal Ota kayar!
-        dna.desirePlant = 1f - dna.desirePoison; 
+        dna.desirePlant = Mathf.Max(0.01f, dna.desirePlant);
+        dna.desirePoison = Mathf.Max(0.01f, dna.desirePoison);
+        dna.desireMeat = Mathf.Max(0.01f, dna.desireMeat);
 
-        // Et arzusu 
-        dna.desireMeat += Random.Range(-0.02f, 0.02f);
-        dna.desireMeat = Mathf.Clamp(dna.desireMeat, 0f, 1f);
+        float totalDesire = dna.desirePlant + dna.desirePoison + dna.desireMeat;
+        dna.desirePlant /= totalDesire;
+        dna.desirePoison /= totalDesire;
+        dna.desireMeat /= totalDesire;
 
-        // Zehir Direnci Mutasyonu 
-        dna.poisonResistance += Random.Range(-0.02f, 0.02f); 
+        dna.poisonResistance += Random.Range(-0.05f, 0.05f) + poisonBias; 
         dna.poisonResistance = Mathf.Clamp(dna.poisonResistance, 0f, 1f);
+
+        // 6. AVCILIK MUTASYONU (Pençeler, Dişler ve Hız)
+        float huntMut = Random.Range(-0.05f, 0.05f) + meatBias; // Etçil soyları avcılık genlerini geometrik hızla geliştirir
+        dna.attackDistance += dna.attackDistance * huntMut;
+        dna.attackDamageMultiplier += dna.attackDamageMultiplier * huntMut;
+        dna.attackEnergyCost += dna.attackEnergyCost * huntMut;
+        dna.attackCooldown -= dna.attackCooldown * huntMut; 
 
         // --- SINIRLANDIRMALAR (Güvenlik) ---
         dna.baseSize = Mathf.Clamp(dna.baseSize, 0.3f, 3f);
@@ -312,59 +350,119 @@ public class CreatureStats : MonoBehaviour
         dna.healingEnergyCost = Mathf.Clamp(dna.healingEnergyCost, 0.1f, 10f);
         dna.visionAngle = Mathf.Clamp(dna.visionAngle, 30f, 360f); 
         dna.smellRadius = Mathf.Clamp(dna.smellRadius, 2f, 25f);
+        dna.attackDistance = Mathf.Clamp(dna.attackDistance, 0.5f, 4f);
+        dna.attackCooldown = Mathf.Clamp(dna.attackCooldown, 0.2f, 3f);
+        dna.attackDamageMultiplier = Mathf.Clamp(dna.attackDamageMultiplier, 5f, 50f);
+        dna.attackEnergyCost = Mathf.Clamp(dna.attackEnergyCost, 0.5f, 10f);
+        dna.homeWanderRadius = Mathf.Clamp(dna.homeWanderRadius, 2f, 15f);
+        dna.migrationThreshold = Mathf.Clamp(dna.migrationThreshold, 0.1f, 0.8f); 
+        dna.sociability = Mathf.Clamp(dna.sociability, 0f, 1f);
+        dna.flockTolerance = Mathf.Clamp(dna.flockTolerance, 0.1f, 1.5f);
 
-        float poisonTax = dna.poisonResistance * 0.02f; 
-        dna.idleEnergyDrain += poisonTax;
+        float omnivoreTax = (dna.plantEfficiency * dna.meatEfficiency) * 0.05f;
+        float smellTax = dna.smellRadius * 0.005f;
+        float poisonTax = dna.poisonResistance * 0.02f;
+        dna.idleEnergyDrain = Mathf.Max(0.01f, dna.baseIdleEnergyDrain + omnivoreTax + smellTax + poisonTax);
 
-        // --- RENK VE BİÇİM MOTORU (TURUNCU LANETİNE SON!) ---
-        
-        // 1. ADIM: NORMALE ÇEVİRME (Değerleri 0 ile 1 arasına sıkıştırıyoruz)
+        // --- RENK VE BİÇİM MOTORU (GELİŞMİŞ SÜRÜM - AYNEN KORUNDU) ---
         float sizeNorm = Mathf.InverseLerp(0.3f, 3f, dna.baseSize);
         float speedNorm = Mathf.InverseLerp(0.5f, 10f, dna.moveSpeed);
-        
-        // 🌟 YENİ: Etçil ve Otçul renkleri ayrıldı!
         float plantNorm = Mathf.InverseLerp(0f, 2f, dna.plantEfficiency); 
         float meatNorm = Mathf.InverseLerp(0f, 2f, dna.meatEfficiency);   
-        
+        float attackNorm = Mathf.InverseLerp(5f, 50f, dna.attackDamageMultiplier);
         float healNorm = Mathf.InverseLerp(0.1f, 15f, dna.healingRate);
         float poisonNorm = Mathf.InverseLerp(0f, 1f, dna.poisonResistance);
 
-        // 2. ADIM: 5. KUVVET ALMA ("Winner Takes All" - Kazanan Hepsini Alır Mantığı)
-        // Kuvveti 3'ten 5'e çıkardık. Artık renkler birbirine KARIŞMAYACAK.
-        // Hangi gen baskınsa, canlı direkt o saf renkte parlayacak!
         float sizeWeight = Mathf.Pow(sizeNorm, 5);
         float speedWeight = Mathf.Pow(speedNorm, 5);
         float plantWeight = Mathf.Pow(plantNorm, 5);
         float meatWeight = Mathf.Pow(meatNorm, 5);
+        float attackWeight = Mathf.Pow(attackNorm, 5);
         float healWeight = Mathf.Pow(healNorm, 5);
         float poisonWeight = Mathf.Pow(poisonNorm, 5);
 
-        // 3. ADIM: YENİ RENK PALETİ 
-        Color sizeColor = Color.green;                     // İriler YEŞİL (Yürüyen çalı gibi)
-        Color speedColor = Color.yellow;                   // Hızlılar SARI (Elektrik/Çıta gibi)
-        Color plantColor = Color.cyan;                     // Otçullar TURKUAZ
-        Color meatColor = new Color(0.7f, 0f, 0f);         // 🌟 ETÇİLLER KOYU KIRMIZI (Kan Rengi!)
-        Color healColor = new Color(1f, 0.4f, 0.7f);       // İyileşmesi yüksek olanlar PEMBE
-        Color poisonColor = new Color(0.6f, 0f, 1f);       // Zehir yiyiciler MOR
+        Color sizeColor = Color.green;                     
+        Color speedColor = Color.yellow;                   
+        Color plantColor = Color.cyan;                     
+        Color scavengerColor = new Color(0.45f, 0.25f, 0f); 
+        Color predatorColor = new Color(0.95f, 0f, 0f);    
+        Color healColor = new Color(1f, 0.4f, 0.7f);       
+        Color poisonColor = new Color(0.6f, 0f, 1f);       
 
-        float totalWeight = sizeWeight + speedWeight + plantWeight + meatWeight + healWeight + poisonWeight; 
-        
-        // Bölme hatasını (Divide by Zero) önlemek için güvenlik
+        float totalWeight = sizeWeight + speedWeight + plantWeight + meatWeight + attackWeight + healWeight + poisonWeight; 
         if (totalWeight <= 0.001f) totalWeight = 1f;
 
-        // 4. ADIM: Renkleri Harmanla
-        float r = (sizeColor.r * sizeWeight + speedColor.r * speedWeight + plantColor.r * plantWeight + meatColor.r * meatWeight + healColor.r * healWeight + poisonColor.r * poisonWeight) / totalWeight;
-        float g = (sizeColor.g * sizeWeight + speedColor.g * speedWeight + plantColor.g * plantWeight + meatColor.g * meatWeight + healColor.g * healWeight + poisonColor.g * poisonWeight) / totalWeight;
-        float b = (sizeColor.b * sizeWeight + speedColor.b * speedWeight + plantColor.b * plantWeight + meatColor.b * meatWeight + healColor.b * healWeight + poisonColor.b * poisonWeight) / totalWeight;
+        float r = (sizeColor.r * sizeWeight + speedColor.r * speedWeight + plantColor.r * plantWeight + scavengerColor.r * meatWeight + predatorColor.r * attackWeight + healColor.r * healWeight + poisonColor.r * poisonWeight) / totalWeight;
+        float g = (sizeColor.g * sizeWeight + speedColor.g * speedWeight + plantColor.g * plantWeight + scavengerColor.g * meatWeight + predatorColor.g * attackWeight + healColor.g * healWeight + poisonColor.g * poisonWeight) / totalWeight;
+        float b = (sizeColor.b * sizeWeight + speedColor.b * speedWeight + plantColor.b * plantWeight + scavengerColor.b * meatWeight + predatorColor.b * attackWeight + healColor.b * healWeight + poisonColor.b * poisonWeight) / totalWeight;
 
         Color rawColor = new Color(r, g, b);
-        
-        // 5. ADIM: Parlat ve Ata!
         Color.RGBToHSV(rawColor, out float h, out float s, out float v);
-        
-        // Doygunluğu (Saturation) yüksek tutuyoruz ki renkler soluklaşıp kahverengiye dönmesin
         float finalSaturation = Mathf.Clamp(s * 1.5f, 0.6f, 1f); 
         
-        dna.skinColor = Color.HSVToRGB(h, finalSaturation, 0.9f);
+        dna.skinColor = Color.HSVToRGB(h, finalSaturation, 0.9f); 
+    }
+
+    // 🌟 DİNAMİK TAKSONOMİ SİSTEMİ (Canlının Biyolojik Sınıfını Hesaplar)
+    public string GetCreatureClass()
+    {
+        if (dna == null) return "<color=#708090><b>Bilinmeyen Tür??</b></color>";
+
+        // Kolaylık olsun diye DNA verilerini lokal değişkenlere alıyoruz
+        float plantEff = dna.plantEfficiency;
+        float meatEff = dna.meatEfficiency;
+        float plantDes = dna.desirePlant;
+        float meatDes = dna.desireMeat;
+        float poisonDes = dna.desirePoison;
+        float poisonRes = dna.poisonResistance;
+        float size = dna.baseSize;
+
+        // 1. ZEHİR TÜKETİCİSİ (Toxicovore)
+        // Zehirli ota ilgisi %35'i geçmiş ve zehir direnci %35'in üzerindeyse
+        if (poisonDes >= 0.35f && poisonRes >= 0.35f)
+        {
+            return "<color=#9400D3><b>Zehir Tüketicisi </b></color>";
+        }
+
+        // 2. ETÇİL SINIFLARI (Predator & Scavenger)
+        if (meatDes >= 0.40f && meatEff >= 0.40f)
+        {
+            // Eğer saldırma genleri (hasarı ve mesafesi) gelişmişse gerçek bir yırtıcıdır!
+            if (dna.attackDamageMultiplier >= 15f && dna.attackDistance >= 1.2f)
+            {
+                // Boyutu da devasaysa o bir Apex Predatördür!
+                if (size >= 1.6f)
+                {
+                    return "<color=#800000><b>Devasa Predatör</b></color>";
+                }
+                return "<color=#FF0000><b> Predatör </b></color>";
+            }
+            else
+            {
+                // Eti sindiriyor ve seviyor ama saldıramıyorsa o bir Leşçildir
+                return "<color=#D2691E><b> Leşçil </b></color>";
+            }
+        }
+
+        // 3. HEPÇİL (Omnivore)
+        // Hem otu hem eti %35'in üzerinde verimle sindirebiliyorsa dengeli bir hepçildir
+        if (plantEff >= 0.35f && meatEff >= 0.35f)
+        {
+            return "<color=#8B4513><b> Hepçil </b></color>";
+        }
+
+        // 4. OTÇUL SINIFLARI (Herbivore)
+        if (plantDes >= 0.40f && plantEff >= 0.40f)
+        {
+            // Boyutu devasaysa Megafauna (Dev Otçul) sınıfına girer
+            if (size >= 1.7f)
+            {
+                return "<color=#005500><b> Devasa Otçul </b></color>";
+            }
+            return "<color=#008000><b> Otçul </b></color>";
+        }
+
+        // 5. BAŞLANGIÇ / ARA FORM
+        return "<color=#708090><b>Gelişmekte Olan Tür</b></color>";
     }
 }

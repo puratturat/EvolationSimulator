@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FoodData
   foodName: Herb
   foodType: 0
-  baseEnergyRestore: 50
+  baseEnergyRestore: 40
   minSpoilTime: 500
   maxSpoilTime: 1000
   poisonDamage: 0
