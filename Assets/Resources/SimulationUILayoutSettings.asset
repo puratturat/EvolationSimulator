@@ -1,0 +1,86 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1192a57241a0411418a3cf9079e6b2d8, type: 3}
+  m_Name: SimulationUILayoutSettings
+  m_EditorClassIdentifier: Assembly-CSharp::SimulationUILayoutSettings
+  referenceResolution: {x: 1920, y: 1080}
+  matchWidthOrHeight: 0.5
+  compactLayoutEnabled: 1
+  compactAspectThreshold: 1.55
+  compactHeaderRowOffset: 68
+  compactObservationOffset: 68
+  population:
+    apply: 1
+    anchor: 2
+    position: {x: -410, y: -18}
+    size: {x: 380, y: 58}
+    scale: {x: 1, y: 1}
+  creatureButton:
+    apply: 1
+    anchor: 2
+    position: {x: -210, y: -18}
+    size: {x: 160, y: 48}
+    scale: {x: 1, y: 1}
+  foodButton:
+    apply: 1
+    anchor: 2
+    position: {x: -20, y: -18}
+    size: {x: 160, y: 48}
+    scale: {x: 1, y: 1}
+  timerButtons:
+    apply: 1
+    anchor: 1
+    position: {x: 0, y: -18}
+    size: {x: 620, y: 58}
+    scale: {x: 1.35, y: 1.35}
+  timerButtonSize: {x: 58, y: 48}
+  timerButtonSpacing: 10
+  populationFontSize: 24
+  topButtonFontSize: 20
+  timerButtonFontSize: 22
+  simulationInfoFontSize: 20
+  statsPanel:
+    apply: 1
+    anchor: 0
+    position: {x: 16, y: -16}
+    size: {x: 540, y: 1048}
+    scale: {x: 1, y: 1}
+  creaturePanel:
+    apply: 1
+    anchor: 8
+    position: {x: -16, y: 16}
+    size: {x: 620, y: 150}
+    scale: {x: 1, y: 1}
+  foodPanel:
+    apply: 1
+    anchor: 8
+    position: {x: -16, y: 16}
+    size: {x: 620, y: 150}
+    scale: {x: 1, y: 1}
+  simulationInfo:
+    apply: 1
+    anchor: 7
+    position: {x: 0, y: 16}
+    size: {x: 500, y: 42}
+    scale: {x: 1, y: 1}
+  observationToggle:
+    apply: 1
+    anchor: 2
+    position: {x: -20, y: -82}
+    size: {x: 150, y: 48}
+    scale: {x: 1, y: 1}
+  observationPanel:
+    apply: 1
+    anchor: 5
+    position: {x: -20, y: -28}
+    size: {x: 430, y: 760}
+    scale: {x: 1, y: 1}

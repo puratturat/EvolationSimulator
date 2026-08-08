@@ -17,9 +17,14 @@ public class ObservationDashboard : MonoBehaviour
 
     private readonly List<ChampionRow> rows = new List<ChampionRow>();
     private GameObject panel;
+    private RectTransform toggleRect;
+    private RectTransform panelRect;
+    private CanvasScaler canvasScaler;
+    private SimulationUILayoutSettings layoutSettings;
     private TextMeshProUGUI populationText;
     private TextMeshProUGUI logText;
     private float refreshTimer;
+    private float layoutRefreshTimer;
 
     private static readonly Color PanelColor = new Color(0.035f, 0.05f, 0.07f, 0.94f);
     private static readonly Color RowColor = new Color(0.10f, 0.14f, 0.18f, 0.96f);
@@ -27,12 +32,21 @@ public class ObservationDashboard : MonoBehaviour
 
     private void Start()
     {
+        layoutSettings = SimulationUILayoutSettings.Load();
         BuildInterface();
+        ApplyConfiguredLayout();
         SetPanelVisible(false);
     }
 
     private void Update()
     {
+        layoutRefreshTimer -= Time.unscaledDeltaTime;
+        if (layoutRefreshTimer <= 0f)
+        {
+            ApplyConfiguredLayout();
+            layoutRefreshTimer = 0.5f;
+        }
+
         if (panel == null || !panel.activeSelf)
         {
             return;
@@ -61,13 +75,13 @@ public class ObservationDashboard : MonoBehaviour
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 1000;
 
-        CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.matchWidthOrHeight = 0.5f;
+        canvasScaler = canvasObject.GetComponent<CanvasScaler>();
+        canvasScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        canvasScaler.referenceResolution = new Vector2(1920f, 1080f);
+        canvasScaler.matchWidthOrHeight = 0.5f;
 
         Button toggle = CreateButton(canvasObject.transform, "Enler Toggle", "ENLER", new Vector2(126f, 42f), AccentColor);
-        RectTransform toggleRect = toggle.GetComponent<RectTransform>();
+        toggleRect = toggle.GetComponent<RectTransform>();
         toggleRect.anchorMin = new Vector2(1f, 1f);
         toggleRect.anchorMax = new Vector2(1f, 1f);
         toggleRect.pivot = new Vector2(1f, 1f);
@@ -75,7 +89,7 @@ public class ObservationDashboard : MonoBehaviour
         toggle.onClick.AddListener(() => SetPanelVisible(true));
 
         panel = CreatePanel(canvasObject.transform, "Enler Panel", PanelColor);
-        RectTransform panelRect = panel.GetComponent<RectTransform>();
+        panelRect = panel.GetComponent<RectTransform>();
         panelRect.anchorMin = new Vector2(1f, 0.5f);
         panelRect.anchorMax = new Vector2(1f, 0.5f);
         panelRect.pivot = new Vector2(1f, 0.5f);
@@ -161,6 +175,34 @@ public class ObservationDashboard : MonoBehaviour
         logRect.offsetMin = new Vector2(210f, 12f);
         logRect.offsetMax = new Vector2(-12f, 48f);
         logText.color = new Color(0.60f, 0.70f, 0.74f, 1f);
+    }
+
+    private void ApplyConfiguredLayout()
+    {
+        if (layoutSettings == null)
+        {
+            layoutSettings = SimulationUILayoutSettings.Load();
+        }
+
+        if (layoutSettings == null)
+        {
+            return;
+        }
+
+        if (canvasScaler != null)
+        {
+            canvasScaler.referenceResolution = layoutSettings.referenceResolution;
+            canvasScaler.matchWidthOrHeight = layoutSettings.matchWidthOrHeight;
+        }
+
+        SimulationUILayoutUtility.Apply(toggleRect, layoutSettings.observationToggle);
+        SimulationUILayoutUtility.Apply(panelRect, layoutSettings.observationPanel);
+
+        float aspectRatio = Screen.height > 0 ? (float)Screen.width / Screen.height : 0f;
+        if (SimulationUILayoutUtility.ShouldUseCompactLayout(layoutSettings, aspectRatio) && toggleRect != null)
+        {
+            toggleRect.anchoredPosition += Vector2.down * layoutSettings.compactObservationOffset;
+        }
     }
 
     private void BuildChampionButtons(Transform content)
