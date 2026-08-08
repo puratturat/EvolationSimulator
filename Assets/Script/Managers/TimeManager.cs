@@ -1,10 +1,20 @@
 using UnityEngine;
+using TMPro;
 
 public class TimeManager : MonoBehaviour
 {
+    [Header("Simülasyon Bilgisi")]
+    [SerializeField] private TextMeshProUGUI simulationInfoText;
+
+    private float elapsedSimulationTime;
+    private int lastDisplayedSecond = -1;
+
     // Klavyeden gelen tuş basımlarını her saniye kontrol ettiğimiz döngü
     void Update()
     {
+        elapsedSimulationTime += Time.deltaTime;
+        UpdateSimulationInfo();
+
         // 0 Tuşuna basıldığında (Oyunu Durdur)
         if (Input.GetKeyDown(KeyCode.Alpha0) || Input.GetKeyDown(KeyCode.Keypad0) || Input.GetKeyDown(KeyCode.Space))
         {
@@ -35,6 +45,26 @@ public class TimeManager : MonoBehaviour
         {
             SpeedUp16x();
         }
+    }
+
+    private void UpdateSimulationInfo()
+    {
+        if (simulationInfoText == null)
+        {
+            return;
+        }
+
+        int totalSeconds = Mathf.FloorToInt(elapsedSimulationTime);
+        if (totalSeconds == lastDisplayedSecond)
+        {
+            return;
+        }
+
+        lastDisplayedSecond = totalSeconds;
+        int hours = totalSeconds / 3600;
+        int minutes = totalSeconds / 60 % 60;
+        int seconds = totalSeconds % 60;
+        simulationInfoText.text = $"Geçen Süre: {hours:00}:{minutes:00}:{seconds:00}  •  v{Application.version}";
     }
 
     // --- BUTONLARIN VE TUŞLARIN ÇAĞIRDIĞI FONKSİYONLAR ---
