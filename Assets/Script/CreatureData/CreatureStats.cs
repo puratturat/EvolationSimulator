@@ -63,6 +63,9 @@ public class CreatureStats : MonoBehaviour
     {
         if (dna != null)
         {
+            dna.EnsureVisualGenes();
+            dna.UpdateSkinColorFromEcology();
+
             // 🌟 2. KRİTİK FİX: Evrimleşen Renk Genini canlının fiziksel bedenine uygula
             SpriteRenderer sr = GetComponent<SpriteRenderer>();
             if (sr != null) sr.color = dna.skinColor;
@@ -82,6 +85,13 @@ public class CreatureStats : MonoBehaviour
         }
 
         observationId = SimulationEventLogger.RegisterCreature(this);
+
+        CreatureVisualEvolution visualEvolution = GetComponent<CreatureVisualEvolution>();
+        if (visualEvolution == null)
+        {
+            visualEvolution = gameObject.AddComponent<CreatureVisualEvolution>();
+        }
+        visualEvolution.Initialize(this);
     }
 
     void Update()
@@ -317,6 +327,14 @@ public class CreatureStats : MonoBehaviour
     public void ApplyMutation()
     {
         dna.EnsureBaseMetabolism();
+        dna.EnsureVisualGenes();
+
+        dna.lineageHue = Mathf.Repeat(dna.lineageHue + Random.Range(-0.045f, 0.045f), 1f);
+        if (Random.value < 0.035f)
+        {
+            dna.lineageHue = Mathf.Repeat(dna.lineageHue + Random.Range(0.12f, 0.32f), 1f);
+        }
+        dna.patternSeed = Mathf.Repeat(dna.patternSeed + Random.Range(-0.075f, 0.075f), 1f);
 
         // 🌟 BİYOLOJİK YÖNELİM BİASLARI (Zar Hileleri) 🌟
         // Ebeveynin yönelimi ne kadar güçlüyse, sonraki neslin o sınıfa ait mutasyon şansı o kadar katlanır!
@@ -423,43 +441,14 @@ public class CreatureStats : MonoBehaviour
         float biteReachTax = Mathf.InverseLerp(0.5f, 4f, dna.attackDistance) * 0.05f;
         dna.idleEnergyDrain = Mathf.Max(0.01f, dna.baseIdleEnergyDrain + omnivoreTax + smellTax + poisonTax + biteStrengthTax + biteReachTax);
 
-        // --- RENK VE BİÇİM MOTORU (GELİŞMİŞ SÜRÜM - AYNEN KORUNDU) ---
-        float sizeNorm = Mathf.InverseLerp(0.3f, 3f, dna.baseSize);
-        float speedNorm = Mathf.InverseLerp(0.5f, 10f, dna.moveSpeed);
-        float plantNorm = Mathf.InverseLerp(0f, 2f, dna.plantEfficiency); 
-        float meatNorm = Mathf.InverseLerp(0f, 2f, dna.meatEfficiency);   
-        float attackNorm = Mathf.InverseLerp(5f, 50f, dna.attackDamageMultiplier);
-        float healNorm = Mathf.InverseLerp(0.1f, 15f, dna.healingRate);
-        float poisonNorm = Mathf.InverseLerp(0f, 1f, dna.poisonResistance);
+        // --- EKOLOJİK RENK VE GEOMETRİK FENOTİP MOTORU ---
+        dna.UpdateSkinColorFromEcology();
 
-        float sizeWeight = Mathf.Pow(sizeNorm, 5);
-        float speedWeight = Mathf.Pow(speedNorm, 5);
-        float plantWeight = Mathf.Pow(plantNorm, 5);
-        float meatWeight = Mathf.Pow(meatNorm, 5);
-        float attackWeight = Mathf.Pow(attackNorm, 5);
-        float healWeight = Mathf.Pow(healNorm, 5);
-        float poisonWeight = Mathf.Pow(poisonNorm, 5);
-
-        Color sizeColor = Color.green;                     
-        Color speedColor = Color.yellow;                   
-        Color plantColor = Color.cyan;                     
-        Color scavengerColor = new Color(0.45f, 0.25f, 0f); 
-        Color predatorColor = new Color(0.95f, 0f, 0f);    
-        Color healColor = new Color(1f, 0.4f, 0.7f);       
-        Color poisonColor = new Color(0.6f, 0f, 1f);       
-
-        float totalWeight = sizeWeight + speedWeight + plantWeight + meatWeight + attackWeight + healWeight + poisonWeight; 
-        if (totalWeight <= 0.001f) totalWeight = 1f;
-
-        float r = (sizeColor.r * sizeWeight + speedColor.r * speedWeight + plantColor.r * plantWeight + scavengerColor.r * meatWeight + predatorColor.r * attackWeight + healColor.r * healWeight + poisonColor.r * poisonWeight) / totalWeight;
-        float g = (sizeColor.g * sizeWeight + speedColor.g * speedWeight + plantColor.g * plantWeight + scavengerColor.g * meatWeight + predatorColor.g * attackWeight + healColor.g * healWeight + poisonColor.g * poisonWeight) / totalWeight;
-        float b = (sizeColor.b * sizeWeight + speedColor.b * speedWeight + plantColor.b * plantWeight + scavengerColor.b * meatWeight + predatorColor.b * attackWeight + healColor.b * healWeight + poisonColor.b * poisonWeight) / totalWeight;
-
-        Color rawColor = new Color(r, g, b);
-        Color.RGBToHSV(rawColor, out float h, out float s, out float v);
-        float finalSaturation = Mathf.Clamp(s * 1.5f, 0.6f, 1f); 
-        
-        dna.skinColor = Color.HSVToRGB(h, finalSaturation, 0.9f); 
+        CreatureVisualEvolution visualEvolution = GetComponent<CreatureVisualEvolution>();
+        if (visualEvolution != null)
+        {
+            visualEvolution.RefreshVisuals();
+        }
     }
 
     // 🌟 DİNAMİK TAKSONOMİ SİSTEMİ (Canlının Biyolojik Sınıfını Hesaplar)

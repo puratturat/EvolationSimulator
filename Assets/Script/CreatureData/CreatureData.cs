@@ -7,6 +7,11 @@ public class CreatureData : ScriptableObject
     public Color skinColor = Color.green; // Deri Rengi
     public float baseSize = 1f; // Temel Büyüklük (Scale)
 
+    [Header("Görsel Evrim Genleri")]
+    [Range(0f, 1f)] public float lineageHue = 0.5f;
+    [Range(0f, 1f)] public float patternSeed = 0.5f;
+    [HideInInspector] public bool visualGenesInitialized;
+
     [Header("Hayati Değerler")]
     public float maxHealth = 100f;
     public float maxEnergy = 100f;
@@ -61,7 +66,66 @@ public class CreatureData : ScriptableObject
 
     [Header("Üreme Ayarları")]
     public float reproduceEnergyThreshold = 80f; 
-    public float reproductionEnergyCost = 40f; 
+    public float reproductionEnergyCost = 40f;
+
+    public void EnsureVisualGenes()
+    {
+        if (visualGenesInitialized)
+        {
+            return;
+        }
+
+        Color.RGBToHSV(skinColor, out float sourceHue, out _, out _);
+        lineageHue = Mathf.Repeat((sourceHue * 0.73f) + (baseSize * 0.11f) + (moveSpeed * 0.037f), 1f);
+        patternSeed = Mathf.Repeat((sourceHue * 0.41f) + (maxHealth * 0.0031f) + (smellRadius * 0.071f), 1f);
+        visualGenesInitialized = true;
+    }
+
+    public void UpdateSkinColorFromEcology()
+    {
+        EnsureVisualGenes();
+
+        float plantScore = Mathf.Sqrt(Mathf.Clamp01(desirePlant) * Mathf.Clamp01(plantEfficiency * 0.5f));
+        float meatScore = Mathf.Sqrt(Mathf.Clamp01(desireMeat) * Mathf.Clamp01(meatEfficiency * 0.5f));
+        float poisonScore = Mathf.Sqrt(Mathf.Clamp01(desirePoison) * Mathf.Clamp01(poisonResistance));
+
+        float ecologicalHue;
+        float strongest = Mathf.Max(plantScore, Mathf.Max(meatScore, poisonScore));
+        float weakest = Mathf.Min(plantScore, Mathf.Min(meatScore, poisonScore));
+        float secondStrongest = plantScore + meatScore + poisonScore - strongest - weakest;
+        bool hybrid = strongest > 0.001f && secondStrongest >= strongest * 0.78f;
+
+        if (hybrid && plantScore >= poisonScore && meatScore >= poisonScore)
+        {
+            ecologicalHue = 0.11f; // Ot + et: altın/kehribar.
+        }
+        else if (hybrid && plantScore >= meatScore && poisonScore >= meatScore)
+        {
+            ecologicalHue = 0.53f; // Ot + zehir: mavi/turkuaz.
+        }
+        else if (hybrid)
+        {
+            ecologicalHue = 0.92f; // Et + zehir: koyu pembe.
+        }
+        else if (meatScore >= plantScore && meatScore >= poisonScore)
+        {
+            ecologicalHue = 0.015f; // Etçil: kırmızı.
+        }
+        else if (poisonScore >= plantScore)
+        {
+            ecologicalHue = 0.78f; // Zehir uyumu: mor.
+        }
+        else
+        {
+            ecologicalHue = 0.34f; // Otçul: yeşil.
+        }
+
+        float lineageOffset = Mathf.Lerp(-0.075f, 0.075f, lineageHue);
+        float hue = Mathf.Repeat(ecologicalHue + lineageOffset, 1f);
+        float saturation = Mathf.Lerp(0.78f, 1f, Mathf.Repeat(patternSeed * 1.91f, 1f));
+        float value = Mathf.Lerp(0.74f, 0.98f, Mathf.Repeat((patternSeed * 1.37f) + 0.19f, 1f));
+        skinColor = Color.HSVToRGB(hue, saturation, value);
+    }
 
     public void EnsureBaseMetabolism()
     {
@@ -76,6 +140,8 @@ public class CreatureData : ScriptableObject
     {
         parentA.EnsureBaseMetabolism();
         parentB.EnsureBaseMetabolism();
+        parentA.EnsureVisualGenes();
+        parentB.EnsureVisualGenes();
 
         // Yepyeni, boş bir DNA sarmalı oluşturuyoruz
         CreatureData newDNA = ScriptableObject.CreateInstance<CreatureData>();
@@ -85,6 +151,9 @@ public class CreatureData : ScriptableObject
         newDNA.maxHealth = (Random.value > 0.5f) ? parentA.maxHealth : parentB.maxHealth;
         newDNA.maxEnergy = (Random.value > 0.5f) ? parentA.maxEnergy : parentB.maxEnergy;
         newDNA.moveSpeed = (Random.value > 0.5f) ? parentA.moveSpeed : parentB.moveSpeed;
+        newDNA.lineageHue = (Random.value > 0.5f) ? parentA.lineageHue : parentB.lineageHue;
+        newDNA.patternSeed = (Random.value > 0.5f) ? parentA.patternSeed : parentB.patternSeed;
+        newDNA.visualGenesInitialized = true;
 
         // 2. Metabolizma ve Sindirim
         newDNA.baseIdleEnergyDrain = (Random.value > 0.5f) ? parentA.baseIdleEnergyDrain : parentB.baseIdleEnergyDrain;
@@ -123,6 +192,8 @@ public class CreatureData : ScriptableObject
         newDNA.migrationThreshold = (Random.value > 0.5f) ? parentA.migrationThreshold : parentB.migrationThreshold;
         newDNA.sociability = (Random.value > 0.5f) ? parentA.sociability : parentB.sociability;
         newDNA.flockTolerance = (Random.value > 0.5f) ? parentA.flockTolerance : parentB.flockTolerance;
+
+        newDNA.UpdateSkinColorFromEcology();
 
         return newDNA;
     }
