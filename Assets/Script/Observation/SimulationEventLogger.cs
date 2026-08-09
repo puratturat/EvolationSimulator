@@ -260,6 +260,11 @@ public class SimulationEventLogger : MonoBehaviour
         int predators = 0;
         int toxicovores = 0;
         int developing = 0;
+        int herbivoreLineage = 0;
+        int predatorLineage = 0;
+        int scavengerLineage = 0;
+        int toxicovoreLineage = 0;
+        int unassignedLineage = 0;
 
         foreach (CreatureStats creature in living)
         {
@@ -269,6 +274,15 @@ public class SimulationEventLogger : MonoBehaviour
             meatEfficiencySum += creature.dna.meatEfficiency;
             poisonDesireSum += creature.dna.desirePoison;
             poisonResistanceSum += creature.dna.poisonResistance;
+
+            switch (creature.dna.ecologicalLineage)
+            {
+                case EcologicalLineage.Herbivore: herbivoreLineage++; break;
+                case EcologicalLineage.Predator: predatorLineage++; break;
+                case EcologicalLineage.Scavenger: scavengerLineage++; break;
+                case EcologicalLineage.Toxicovore: toxicovoreLineage++; break;
+                default: unassignedLineage++; break;
+            }
 
             switch (GetSimpleClass(creature))
             {
@@ -312,6 +326,12 @@ public class SimulationEventLogger : MonoBehaviour
             .Append(",\"predator\":").Append(predators)
             .Append(",\"toxicovore\":").Append(toxicovores)
             .Append(",\"developing\":").Append(developing)
+            .Append("},\"lineages\":{")
+            .Append("\"herbivore\":").Append(herbivoreLineage)
+            .Append(",\"predator\":").Append(predatorLineage)
+            .Append(",\"scavenger\":").Append(scavengerLineage)
+            .Append(",\"toxicovore\":").Append(toxicovoreLineage)
+            .Append(",\"unassigned\":").Append(unassignedLineage)
             .Append("}},\"champions\":{");
         AppendChampion(json, "carnivore_genetics", carnivoreChampion, c => Mathf.Sqrt(Mathf.Clamp01(c.dna.desireMeat) * Mathf.Clamp01(c.dna.meatEfficiency)));
         json.Append(',');

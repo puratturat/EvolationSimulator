@@ -101,7 +101,8 @@ public class CreatureStats : MonoBehaviour
             if (currentEnergy > 0)
             {
                 currentSpeed = CalculateCurrentSpeed();
-                float metabolismTax = dna.visionRadius * dna.visionEnergyTax;
+                float visionArea = dna.visionRadius * (dna.visionAngle / 360f);
+                float metabolismTax = visionArea * dna.visionEnergyTax;
 
                 // 1. Standart Enerji Harcaması (Metabolizma)
                 if (isMoving) currentEnergy -= ((dna.moveEnergyDrain * dna.moveSpeed) + metabolismTax) * ageEnergyDrainMultiplier * Time.deltaTime;
@@ -218,11 +219,17 @@ public class CreatureStats : MonoBehaviour
         float herbivoreEnergyBonus = herbivoreFocus * 0.30f;          // Maks +%60 Enerji bonusu
         float herbivoreSizeBonus = herbivoreFocus * 0.20f;            // Maks +%40 Devleşme bonusu
 
+        // Etçil soylar hızlı hareket ve başarısız av maliyetini karşılayabilecek bir
+        // enerji rezervi kazanır. Bonus yalnızca istek ve sindirim birlikte gelişirse çalışır.
+        float carnivoreFocus = Mathf.Clamp01(dna.desireMeat * dna.meatEfficiency);
+        float carnivoreHealthBonus = carnivoreFocus * 0.16f;
+        float carnivoreEnergyBonus = carnivoreFocus * 0.30f;
+
         // =========================================================================
         // 3. STATLARIN AKTİF ATANMASI
         // =========================================================================
-        currentMaxHealth = (dna.maxHealth * (1f + herbivoreHealthBonus)) * ageMultiplier;
-        currentMaxEnergy = (dna.maxEnergy * (1f + herbivoreEnergyBonus)) * ageMultiplier;
+        currentMaxHealth = (dna.maxHealth * (1f + herbivoreHealthBonus + carnivoreHealthBonus)) * ageMultiplier;
+        currentMaxEnergy = (dna.maxEnergy * (1f + herbivoreEnergyBonus + carnivoreEnergyBonus)) * ageMultiplier;
 
         // Boyutlandırma: Otçullara ekstra devleşme payı veriliyor
         float finalSize = sizeMultiplier * dna.baseSize * (1f + herbivoreSizeBonus);
@@ -377,8 +384,8 @@ public class CreatureStats : MonoBehaviour
         dna.visionAngle -= dna.visionAngle * (visionMut * 0.8f); 
         dna.visionAngle += Random.Range(-10f, 10f); 
 
-        float totalVisionArea = dna.visionRadius * (dna.visionAngle / 360f); 
-        dna.visionEnergyTax = totalVisionArea * 0.01f;
+        dna.visionEnergyTax *= Random.Range(0.97f, 1.03f);
+        dna.visionEnergyTax = Mathf.Clamp(dna.visionEnergyTax, 0.002f, 0.03f);
 
         float smellMut = Random.Range(-0.08f, 0.08f) + meatBias;
         dna.smellRadius += dna.smellRadius * smellMut;

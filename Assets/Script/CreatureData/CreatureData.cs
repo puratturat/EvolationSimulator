@@ -1,5 +1,14 @@
 using UnityEngine;
 
+public enum EcologicalLineage
+{
+    Unassigned,
+    Herbivore,
+    Predator,
+    Scavenger,
+    Toxicovore
+}
+
 [CreateAssetMenu(fileName = "New Creature Data", menuName = "Evolution/Creature Data")]
 public class CreatureData : ScriptableObject
 {
@@ -11,6 +20,10 @@ public class CreatureData : ScriptableObject
     [Range(0f, 1f)] public float lineageHue = 0.5f;
     [Range(0f, 1f)] public float patternSeed = 0.5f;
     [HideInInspector] public bool visualGenesInitialized;
+
+    [Header("Ekolojik Soy")]
+    [Tooltip("Kurucu ekolojik soyun, baskın gen paketi üzerinden nesiller boyunca izlenmesini sağlar.")]
+    public EcologicalLineage ecologicalLineage = EcologicalLineage.Unassigned;
 
     [Header("Hayati Değerler")]
     public float maxHealth = 100f;
@@ -146,46 +159,60 @@ public class CreatureData : ScriptableObject
         // Yepyeni, boş bir DNA sarmalı oluşturuyoruz
         CreatureData newDNA = ScriptableObject.CreateInstance<CreatureData>();
 
+        // Beslenme, duyu ve av silahları tek tek parçalanmak yerine ağırlıklı bir
+        // ekolojik paket olarak aktarılır. İkinci ebeveynden gelen sınırlı gen akışı
+        // melezleşmeyi ve uzun vadeli türleşmeyi açık tutar.
+        CreatureData ecologicalPrimary = Random.value > 0.5f ? parentA : parentB;
+        CreatureData ecologicalSecondary = ecologicalPrimary == parentA ? parentB : parentA;
+        float secondaryGeneFlow = Random.Range(0.12f, 0.28f);
+        newDNA.ecologicalLineage = ecologicalPrimary.ecologicalLineage != EcologicalLineage.Unassigned
+            ? ecologicalPrimary.ecologicalLineage
+            : ecologicalSecondary.ecologicalLineage;
+
         // 1. Fiziksel Özellikler (Boyut, Can, Enerji, Hız)
         newDNA.baseSize = (Random.value > 0.5f) ? parentA.baseSize : parentB.baseSize;
         newDNA.maxHealth = (Random.value > 0.5f) ? parentA.maxHealth : parentB.maxHealth;
         newDNA.maxEnergy = (Random.value > 0.5f) ? parentA.maxEnergy : parentB.maxEnergy;
         newDNA.moveSpeed = (Random.value > 0.5f) ? parentA.moveSpeed : parentB.moveSpeed;
-        newDNA.lineageHue = (Random.value > 0.5f) ? parentA.lineageHue : parentB.lineageHue;
-        newDNA.patternSeed = (Random.value > 0.5f) ? parentA.patternSeed : parentB.patternSeed;
+        newDNA.lineageHue = Mathf.Repeat(Mathf.Lerp(ecologicalPrimary.lineageHue, ecologicalSecondary.lineageHue, secondaryGeneFlow), 1f);
+        newDNA.patternSeed = Mathf.Repeat(Mathf.Lerp(ecologicalPrimary.patternSeed, ecologicalSecondary.patternSeed, secondaryGeneFlow), 1f);
         newDNA.visualGenesInitialized = true;
 
         // 2. Metabolizma ve Sindirim
-        newDNA.baseIdleEnergyDrain = (Random.value > 0.5f) ? parentA.baseIdleEnergyDrain : parentB.baseIdleEnergyDrain;
-        newDNA.idleEnergyDrain = (Random.value > 0.5f) ? parentA.idleEnergyDrain : parentB.idleEnergyDrain;
+        newDNA.baseIdleEnergyDrain = Mathf.Lerp(ecologicalPrimary.baseIdleEnergyDrain, ecologicalSecondary.baseIdleEnergyDrain, secondaryGeneFlow);
+        newDNA.idleEnergyDrain = Mathf.Lerp(ecologicalPrimary.idleEnergyDrain, ecologicalSecondary.idleEnergyDrain, secondaryGeneFlow);
         newDNA.moveEnergyDrain = (Random.value > 0.5f) ? parentA.moveEnergyDrain : parentB.moveEnergyDrain;
-        newDNA.plantEfficiency = (Random.value > 0.5f) ? parentA.plantEfficiency : parentB.plantEfficiency;
-        newDNA.meatEfficiency = (Random.value > 0.5f) ? parentA.meatEfficiency : parentB.meatEfficiency;
+        newDNA.plantEfficiency = Mathf.Lerp(ecologicalPrimary.plantEfficiency, ecologicalSecondary.plantEfficiency, secondaryGeneFlow);
+        newDNA.meatEfficiency = Mathf.Lerp(ecologicalPrimary.meatEfficiency, ecologicalSecondary.meatEfficiency, secondaryGeneFlow);
         newDNA.eatDuration = (Random.value > 0.5f) ? parentA.eatDuration : parentB.eatDuration;
         
         // 3. Psikoloji ve Zehir
-        newDNA.desirePlant = (Random.value > 0.5f) ? parentA.desirePlant : parentB.desirePlant;
-        newDNA.desirePoison = (Random.value > 0.5f) ? parentA.desirePoison : parentB.desirePoison;
-        newDNA.desireMeat = (Random.value > 0.5f) ? parentA.desireMeat : parentB.desireMeat;
-        newDNA.poisonResistance = (Random.value > 0.5f) ? parentA.poisonResistance : parentB.poisonResistance;
+        newDNA.desirePlant = Mathf.Lerp(ecologicalPrimary.desirePlant, ecologicalSecondary.desirePlant, secondaryGeneFlow);
+        newDNA.desirePoison = Mathf.Lerp(ecologicalPrimary.desirePoison, ecologicalSecondary.desirePoison, secondaryGeneFlow);
+        newDNA.desireMeat = Mathf.Lerp(ecologicalPrimary.desireMeat, ecologicalSecondary.desireMeat, secondaryGeneFlow);
+        float desireTotal = Mathf.Max(newDNA.desirePlant + newDNA.desirePoison + newDNA.desireMeat, 0.001f);
+        newDNA.desirePlant /= desireTotal;
+        newDNA.desirePoison /= desireTotal;
+        newDNA.desireMeat /= desireTotal;
+        newDNA.poisonResistance = Mathf.Lerp(ecologicalPrimary.poisonResistance, ecologicalSecondary.poisonResistance, secondaryGeneFlow);
 
         // 4. Duyular (Göz ve Burun)
-        newDNA.visionRadius = (Random.value > 0.5f) ? parentA.visionRadius : parentB.visionRadius;
-        newDNA.visionAngle = (Random.value > 0.5f) ? parentA.visionAngle : parentB.visionAngle;
-        newDNA.visionEnergyTax = (Random.value > 0.5f) ? parentA.visionEnergyTax : parentB.visionEnergyTax;
-        newDNA.smellRadius = (Random.value > 0.5f) ? parentA.smellRadius : parentB.smellRadius;
+        newDNA.visionRadius = Mathf.Lerp(ecologicalPrimary.visionRadius, ecologicalSecondary.visionRadius, secondaryGeneFlow);
+        newDNA.visionAngle = Mathf.Lerp(ecologicalPrimary.visionAngle, ecologicalSecondary.visionAngle, secondaryGeneFlow);
+        newDNA.visionEnergyTax = Mathf.Lerp(ecologicalPrimary.visionEnergyTax, ecologicalSecondary.visionEnergyTax, secondaryGeneFlow);
+        newDNA.smellRadius = Mathf.Lerp(ecologicalPrimary.smellRadius, ecologicalSecondary.smellRadius, secondaryGeneFlow);
 
         // 5. İyileşme ve Üreme Sınırları
-        newDNA.healingRate = (Random.value > 0.5f) ? parentA.healingRate : parentB.healingRate;
-        newDNA.healingEnergyCost = (Random.value > 0.5f) ? parentA.healingEnergyCost : parentB.healingEnergyCost;
-        newDNA.reproduceEnergyThreshold = (Random.value > 0.5f) ? parentA.reproduceEnergyThreshold : parentB.reproduceEnergyThreshold;
-        newDNA.reproductionEnergyCost = (Random.value > 0.5f) ? parentA.reproductionEnergyCost : parentB.reproductionEnergyCost;
+        newDNA.healingRate = Mathf.Lerp(ecologicalPrimary.healingRate, ecologicalSecondary.healingRate, secondaryGeneFlow);
+        newDNA.healingEnergyCost = Mathf.Lerp(ecologicalPrimary.healingEnergyCost, ecologicalSecondary.healingEnergyCost, secondaryGeneFlow);
+        newDNA.reproduceEnergyThreshold = Mathf.Lerp(ecologicalPrimary.reproduceEnergyThreshold, ecologicalSecondary.reproduceEnergyThreshold, secondaryGeneFlow);
+        newDNA.reproductionEnergyCost = Mathf.Lerp(ecologicalPrimary.reproductionEnergyCost, ecologicalSecondary.reproductionEnergyCost, secondaryGeneFlow);
 
         // 6. Avcılık Genleri Mirası
-        newDNA.attackDistance = (Random.value > 0.5f) ? parentA.attackDistance : parentB.attackDistance;
-        newDNA.attackCooldown = (Random.value > 0.5f) ? parentA.attackCooldown : parentB.attackCooldown;
-        newDNA.attackDamageMultiplier = (Random.value > 0.5f) ? parentA.attackDamageMultiplier : parentB.attackDamageMultiplier;
-        newDNA.attackEnergyCost = (Random.value > 0.5f) ? parentA.attackEnergyCost : parentB.attackEnergyCost;
+        newDNA.attackDistance = Mathf.Lerp(ecologicalPrimary.attackDistance, ecologicalSecondary.attackDistance, secondaryGeneFlow);
+        newDNA.attackCooldown = Mathf.Lerp(ecologicalPrimary.attackCooldown, ecologicalSecondary.attackCooldown, secondaryGeneFlow);
+        newDNA.attackDamageMultiplier = Mathf.Lerp(ecologicalPrimary.attackDamageMultiplier, ecologicalSecondary.attackDamageMultiplier, secondaryGeneFlow);
+        newDNA.attackEnergyCost = Mathf.Lerp(ecologicalPrimary.attackEnergyCost, ecologicalSecondary.attackEnergyCost, secondaryGeneFlow);
 
         // 7. Sosyallik ve Göç Genleri Mirası
         newDNA.homeWanderRadius = (Random.value > 0.5f) ? parentA.homeWanderRadius : parentB.homeWanderRadius;

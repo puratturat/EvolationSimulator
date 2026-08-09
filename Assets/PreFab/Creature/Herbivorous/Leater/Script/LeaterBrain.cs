@@ -15,6 +15,8 @@ public class LeaterBrain : MonoBehaviour
     public float eatDistance = 1.2f; 
     public float mateDistance = 1.5f; 
     public float mateDuration = 3f; 
+    [Tooltip("Çiftleşme maliyeti ödendikten sonra korunacak asgari enerji oranı. Soyların üreyerek kendini açlıktan silmesini engeller.")]
+    [Range(0.25f, 0.50f)] public float minimumPostMatingEnergyRatio = 0.34f;
 
     [Header("Zehirli Besin Dengesi")]
     [InspectorName("Uyumsuz Canlı Acil Açlık Eşiği")]
@@ -45,7 +47,7 @@ public class LeaterBrain : MonoBehaviour
     [Range(0f, 1f)] public float unadaptedHuntEmergencyThreshold = 0.05f;
     [InspectorName("Uyumlu Etçil Beslenme Eşiği")]
     [Tooltip("Tam uyumlu etçiller enerjileri bu oranın altındayken leş ve canlı av arar.")]
-    [Range(0f, 1f)] public float adaptedCarnivoreEnergyThreshold = 0.55f;
+    [Range(0f, 1f)] public float adaptedCarnivoreEnergyThreshold = 0.68f;
     [InspectorName("Tam Etçil Uyum Gen Eşiği")]
     [Tooltip("Et isteği ve et sindiriminin geometrik ortalaması bu değere ulaştığında davranış tam etçil kabul edilir.")]
     [Range(0.05f, 1f)] public float fullCarnivoreAdaptationThreshold = 0.35f;
@@ -54,7 +56,19 @@ public class LeaterBrain : MonoBehaviour
     [Range(1f, 3f)] public float opportunistRequiredSizeRatio = 1.25f;
     [InspectorName("Predatör Asgari Boyut Oranı")]
     [Tooltip("Tam uyumlu bir predatörün saldırabileceği avlara göre asgari boyut oranı.")]
-    [Range(0.25f, 1f)] public float predatorRequiredSizeRatio = 0.65f;
+    [Range(0.25f, 1f)] public float predatorRequiredSizeRatio = 0.88f;
+    [Tooltip("Aynı ekolojik soydan bir canlıya yalnızca gerçek ölüm kalım açlığında saldırılabilir.")]
+    [Range(0f, 0.20f)] public float sameLineageCannibalEmergencyThreshold = 0.06f;
+    [Tooltip("Avı öldüren canlıya, leş yere düşmeden önce verilen taze et payının av enerjisine oranı.")]
+    [Range(0.05f, 0.30f)] public float freshKillEnergyRatio = 0.15f;
+    [Tooltip("Av sırasında can bu oranın altına düşerse avcı dövüşü bırakıp hayatta kalmayı seçer.")]
+    [Range(0.15f, 0.60f)] public float huntRetreatHealthThreshold = 0.40f;
+    [Tooltip("Bu nesle kadar kurucu soylar canlı av olarak hedeflenmez; kaynak rekabeti ve diğer ölüm nedenleri devam eder.")]
+    [Range(0, 5)] public int protectedFounderGenerations = 2;
+    [Tooltip("Etçil uyumu bu değerin üzerindeyse üreme için yakın zamanda et tüketmiş olması gerekir.")]
+    [Range(0.25f, 0.90f)] public float meatRequiredForReproductionAdaptation = 0.55f;
+    [Tooltip("Bir et öğününün etçil üremesine izin verdiği oyun saniyesi.")]
+    [Range(30f, 300f)] public float carnivoreMealReproductionWindow = 120f;
 
     [Header("Kaçış ve Savunma")]
     [Tooltip("Bir avcının takibi kesildikten sonra tehdidin kaç saniye hatırlanacağı.")]
@@ -106,6 +120,7 @@ public class LeaterBrain : MonoBehaviour
     private Transform targetPrey; 
     private CreatureStats preyStats;
     private float currentAttackCooldown = 0f;
+    private float timeSinceMeatMeal = float.PositiveInfinity;
 
     private CreatureStats threatStats;
     private Transform threatSource;
@@ -124,6 +139,9 @@ public class LeaterBrain : MonoBehaviour
     void Update()
     {
         if (stats == null || stats.dna == null) return;
+
+        if (!float.IsPositiveInfinity(timeSinceMeatMeal))
+            timeSinceMeatMeal += Time.deltaTime;
 
         EvaluatePriorities();
         ExecuteCurrentState();
@@ -164,7 +182,12 @@ public class LeaterBrain : MonoBehaviour
 
         bool isCriticallyHungry = stats.currentEnergy < (stats.currentMaxEnergy * 0.3f);
         
-        bool isFertile = stats.currentStage == LifeStage.Adult;
+        float rawCarnivoreAdaptation = Mathf.Sqrt(
+            Mathf.Clamp01(stats.dna.desireMeat) * Mathf.Clamp01(stats.dna.meatEfficiency));
+        bool hasReproductionFuel = stats.generation <= protectedFounderGenerations
+            || rawCarnivoreAdaptation < meatRequiredForReproductionAdaptation
+            || timeSinceMeatMeal <= carnivoreMealReproductionWindow;
+        bool isFertile = stats.currentStage == LifeStage.Adult && hasReproductionFuel;
         float dynamicMateThreshold = stats.currentMaxEnergy * (stats.dna.reproduceEnergyThreshold / 100f);
         
         if (isFertile && stats.currentEnergy >= dynamicMateThreshold) isMatingMode = true; 
@@ -472,7 +495,9 @@ public class LeaterBrain : MonoBehaviour
 
     public void RegisterThreat(CreatureStats attacker)
     {
-        if (attacker == null || attacker == stats || attacker.currentHealth <= 0f) return;
+        if (stats == null) stats = GetComponent<CreatureStats>();
+        if (stats == null || stats.dna == null || attacker == null || attacker.dna == null
+            || attacker == stats || attacker.currentHealth <= 0f) return;
 
         bool isNewThreat = threatStats != attacker || threatTimer <= 0f;
         threatStats = attacker;
@@ -585,6 +610,14 @@ public class LeaterBrain : MonoBehaviour
     bool CanHuntLivingPrey(CreatureStats candidate)
     {
         if (candidate == null || candidate.dna == null || candidate.currentHealth <= 0f) return false;
+
+        bool protectedFounder = candidate.dna.ecologicalLineage != EcologicalLineage.Unassigned
+            && candidate.generation <= protectedFounderGenerations;
+        if (protectedFounder) return false;
+
+        bool sameTrackedLineage = stats.dna.ecologicalLineage != EcologicalLineage.Unassigned
+            && stats.dna.ecologicalLineage == candidate.dna.ecologicalLineage;
+        if (sameTrackedLineage && GetEnergyRatio() > sameLineageCannibalEmergencyThreshold) return false;
 
         float adaptation = GetCarnivoreAdaptation();
         float allowedEnergyThreshold = Mathf.Lerp(
@@ -784,6 +817,20 @@ public class LeaterBrain : MonoBehaviour
 
         NotifyPreyOfThreat();
 
+        float healthRatio = stats.currentMaxHealth > 0f
+            ? stats.currentHealth / stats.currentMaxHealth
+            : 0f;
+        if (healthRatio <= huntRetreatHealthThreshold)
+        {
+            CreatureStats dangerousPrey = preyStats;
+            RegisterThreat(dangerousPrey);
+            selectedThreatResponse = State.Fleeing;
+            targetPrey = null;
+            preyStats = null;
+            currentState = State.Fleeing;
+            return;
+        }
+
         float dynamicAttackDistance = stats.dna.attackDistance + ((stats.dna.baseSize + preyStats.dna.baseSize) * 0.4f);
         if (Vector2.Distance(transform.position, targetPrey.position) > dynamicAttackDistance)
         {
@@ -805,16 +852,37 @@ public class LeaterBrain : MonoBehaviour
         if (currentAttackCooldown <= 0)
         {
             float damage = stats.currentAttackDamage;
+            float preyHealthBeforeAttack = preyStats.currentHealth;
             preyStats.TakeDamage(damage, SimulationDeathCause.Predation, stats);
             stats.lifetimeAttacks++;
             stats.lifetimeDamageDealt += damage;
             SimulationEventLogger.RecordAttack(stats, preyStats, damage);
+
+            if (preyHealthBeforeAttack > 0f && preyStats.currentHealth <= 0f)
+            {
+                ConsumeFreshKill(preyStats);
+            }
             
             // 🌟 ARTIK DNA'DAN OKUYOR: Genetik Enerji Bedeli
             stats.currentEnergy = Mathf.Max(0f, stats.currentEnergy - attackEnergyCost);
 
             currentAttackCooldown = stats.dna.attackCooldown; // Soğuma süresini DNA'dan alıp sıfırla
         }
+    }
+
+    void ConsumeFreshKill(CreatureStats defeatedPrey)
+    {
+        if (defeatedPrey == null || stats.dna.meatEfficiency <= 0f) return;
+
+        float rawEnergy = Mathf.Max(25f, defeatedPrey.currentMaxEnergy * freshKillEnergyRatio);
+        float digestedEnergy = rawEnergy * stats.dna.meatEfficiency;
+        stats.currentEnergy = Mathf.Min(stats.currentMaxEnergy, stats.currentEnergy + digestedEnergy);
+        stats.lifetimeMeatEaten++;
+        timeSinceMeatMeal = 0f;
+        stats.AddGrowth(rawEnergy, stats.dna.meatEfficiency);
+        homePoint = transform.position;
+        hasHome = true;
+        SimulationEventLogger.RecordFoodConsumed(stats, FoodType.Meat, digestedEnergy);
     }
 
     void NotifyPreyOfThreat()
@@ -866,7 +934,10 @@ public class LeaterBrain : MonoBehaviour
                 else if (eatenFoodType == FoodType.PoisonousPlant)
                     activeEfficiency = stats.dna.plantEfficiency * GetPoisonNutritionMultiplier();
                 else if (eatenFoodType == FoodType.Meat)
+                {
                     activeEfficiency = stats.dna.meatEfficiency;
+                    timeSinceMeatMeal = 0f;
+                }
 
                 // Enerjiyi doğru sindirim katsayısıyla al! 
                 float digestedEnergy = gainedEnergy * activeEfficiency;
@@ -956,7 +1027,9 @@ public class LeaterBrain : MonoBehaviour
         if (mateTimer <= 0)
         {
             // Anne ve Baba enerjilerini harcar
-            stats.currentEnergy -= stats.dna.reproductionEnergyCost;
+            float protectedReserve = stats.currentMaxEnergy * minimumPostMatingEnergyRatio;
+            float affordableCost = Mathf.Max(0f, stats.currentEnergy - protectedReserve);
+            stats.currentEnergy -= Mathf.Min(stats.dna.reproductionEnergyCost, affordableCost);
             if (stats.currentEnergy > stats.currentMaxEnergy) stats.currentEnergy = stats.currentMaxEnergy;
 
             // Bebek sadece BİR kere doğsun diye, ID'si büyük olan taraf doğumu üstlenir

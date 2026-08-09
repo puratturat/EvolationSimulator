@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CreatureData
   skinColor: {r: 0, g: 1, b: 0, a: 1}
   baseSize: 1
+  ecologicalLineage: 1
   maxHealth: 200
   maxEnergy: 400
   homeWanderRadius: 5

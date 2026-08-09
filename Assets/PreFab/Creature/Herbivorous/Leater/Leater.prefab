@@ -310,6 +310,7 @@ MonoBehaviour:
   eatDistance: 0.5
   mateDistance: 1.5
   mateDuration: 3
+  minimumPostMatingEnergyRatio: 0.34
   unadaptedPoisonEmergencyThreshold: 0.08
   adaptedPoisonEnergyThreshold: 0.5
   fullPoisonAdaptationThreshold: 0.35
@@ -318,10 +319,16 @@ MonoBehaviour:
   maximumPoisonNutrition: 1.1
   unadaptedCarrionEmergencyThreshold: 0.12
   unadaptedHuntEmergencyThreshold: 0.05
-  adaptedCarnivoreEnergyThreshold: 0.55
+  adaptedCarnivoreEnergyThreshold: 0.68
   fullCarnivoreAdaptationThreshold: 0.35
   opportunistRequiredSizeRatio: 1.25
-  predatorRequiredSizeRatio: 0.65
+  predatorRequiredSizeRatio: 0.88
+  sameLineageCannibalEmergencyThreshold: 0.06
+  freshKillEnergyRatio: 0.15
+  huntRetreatHealthThreshold: 0.4
+  protectedFounderGenerations: 2
+  meatRequiredForReproductionAdaptation: 0.55
+  carnivoreMealReproductionWindow: 120
   obstacleLayer:
     serializedVersion: 2
     m_Bits: 64
