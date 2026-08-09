@@ -13,15 +13,23 @@ public sealed class CreatureVisualEvolution : MonoBehaviour
     private readonly List<Color> colors = new List<Color>(192);
 
     private CreatureStats stats;
+    private LeaterBrain brain;
     private SpriteRenderer bodyRenderer;
+    private Transform geometryTransform;
     private MeshFilter meshFilter;
     private MeshRenderer meshRenderer;
     private Mesh visualMesh;
+    private float nextAnimationUpdate;
+    private float animationPhaseOffset;
 
     public void Initialize(CreatureStats owner)
     {
         stats = owner;
+        brain = GetComponent<LeaterBrain>();
         bodyRenderer = GetComponent<SpriteRenderer>();
+        animationPhaseOffset = Hash01(
+            stats.dna != null ? stats.dna.patternSeed : 0.5f,
+            (int)(stats.observationId % 997L) + 701) * Mathf.PI * 2f;
         DisableLegacyMouth();
         EnsureGeometryObject();
         RefreshVisuals();
@@ -55,6 +63,80 @@ public sealed class CreatureVisualEvolution : MonoBehaviour
         BuildGeometry();
     }
 
+    private void Update()
+    {
+        if (stats == null || stats.dna == null || geometryTransform == null || bodyRenderer == null)
+        {
+            return;
+        }
+
+        // Görünmeyen canlılar animasyon hesabına girmez. Görünenler de en fazla 12 FPS
+        // güncellenir; mesh yeniden üretilmez, yalnızca tek child Transform oynatılır.
+        if (!bodyRenderer.isVisible || Time.timeScale <= 0f)
+        {
+            return;
+        }
+
+        float now = Time.unscaledTime;
+        if (now < nextAnimationUpdate)
+        {
+            return;
+        }
+        nextAnimationUpdate = now + (1f / 12f);
+
+        bool isEating = brain != null && brain.currentState == LeaterBrain.State.Eating;
+        if (isEating)
+        {
+            AnimateEating(now);
+        }
+        else if (stats.isMoving)
+        {
+            AnimateMovement(now);
+        }
+        else
+        {
+            ResetAnimationPose();
+        }
+    }
+
+    private void AnimateMovement(float now)
+    {
+        float speedMorph = Mathf.InverseLerp(0.5f, 10f, stats.currentSpeed);
+        float cycleSpeed = Mathf.Lerp(2.2f, 5.2f, speedMorph);
+        float phase = (now * cycleSpeed * Mathf.PI * 2f) + animationPhaseOffset;
+        float sway = Mathf.Sin(phase);
+        float bounce = Mathf.Abs(Mathf.Cos(phase));
+
+        geometryTransform.localRotation = Quaternion.Euler(0f, 0f, sway * Mathf.Lerp(1.5f, 6f, speedMorph));
+        geometryTransform.localPosition = new Vector3(
+            sway * Mathf.Lerp(0.006f, 0.025f, speedMorph),
+            bounce * Mathf.Lerp(0.004f, 0.018f, speedMorph),
+            -0.01f);
+        float stretch = 1f + (bounce * Mathf.Lerp(0.006f, 0.035f, speedMorph));
+        geometryTransform.localScale = new Vector3(1f / stretch, stretch, 1f);
+    }
+
+    private void AnimateEating(float now)
+    {
+        float phase = (now * 7.5f * Mathf.PI * 2f) + animationPhaseOffset;
+        float bite = (Mathf.Sin(phase) + 1f) * 0.5f;
+        float side = Mathf.Sin(phase * 0.5f);
+
+        geometryTransform.localRotation = Quaternion.Euler(0f, 0f, side * 2.2f);
+        geometryTransform.localPosition = new Vector3(side * 0.008f, bite * 0.045f, -0.01f);
+        geometryTransform.localScale = new Vector3(
+            1f + (bite * 0.055f),
+            1f - (bite * 0.085f),
+            1f);
+    }
+
+    private void ResetAnimationPose()
+    {
+        geometryTransform.localRotation = Quaternion.identity;
+        geometryTransform.localPosition = new Vector3(0f, 0f, -0.01f);
+        geometryTransform.localScale = Vector3.one;
+    }
+
     private void DisableLegacyMouth()
     {
         Transform legacyMouth = transform.Find("Mouth");
@@ -83,9 +165,11 @@ public sealed class CreatureVisualEvolution : MonoBehaviour
             geometryObject.transform.SetParent(transform, false);
         }
 
-        geometryObject.transform.localPosition = new Vector3(0f, 0f, -0.01f);
-        geometryObject.transform.localRotation = Quaternion.identity;
-        geometryObject.transform.localScale = Vector3.one;
+        geometryTransform = geometryObject.transform;
+
+        geometryTransform.localPosition = new Vector3(0f, 0f, -0.01f);
+        geometryTransform.localRotation = Quaternion.identity;
+        geometryTransform.localScale = Vector3.one;
 
         meshFilter = geometryObject.GetComponent<MeshFilter>();
         if (meshFilter == null)
