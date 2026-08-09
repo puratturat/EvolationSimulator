@@ -99,14 +99,35 @@ public class CreatureSpawnController : MonoBehaviour
         if (tmpLabel != null)
         {
             tmpLabel.text = label;
-            tmpLabel.fontSize = 20f;
+            tmpLabel.fontSize = 17f;
             tmpLabel.alignment = TextAlignmentOptions.Center;
             tmpLabel.color = Color.white;
+            tmpLabel.textWrappingMode = TextWrappingModes.NoWrap;
+            tmpLabel.raycastTarget = false;
+
+            RectTransform labelRect = tmpLabel.rectTransform;
+            labelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            labelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            labelRect.pivot = new Vector2(0.5f, 0.5f);
+            labelRect.anchoredPosition = new Vector2(0f, -31f);
+            labelRect.sizeDelta = new Vector2(126f, 30f);
+            labelRect.localScale = Vector3.one;
         }
         else
         {
             Text legacyLabel = button.GetComponentInChildren<Text>(true);
-            if (legacyLabel != null) legacyLabel.text = label;
+            if (legacyLabel != null)
+            {
+                legacyLabel.text = label;
+                legacyLabel.raycastTarget = false;
+                RectTransform labelRect = legacyLabel.rectTransform;
+                labelRect.anchorMin = new Vector2(0.5f, 0.5f);
+                labelRect.anchorMax = new Vector2(0.5f, 0.5f);
+                labelRect.pivot = new Vector2(0.5f, 0.5f);
+                labelRect.anchoredPosition = new Vector2(0f, -31f);
+                labelRect.sizeDelta = new Vector2(126f, 30f);
+                labelRect.localScale = Vector3.one;
+            }
         }
 
         button.onClick.RemoveAllListeners();
