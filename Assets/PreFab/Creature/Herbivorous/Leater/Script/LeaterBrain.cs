@@ -3,7 +3,7 @@ using UnityEngine;
 public class LeaterBrain : MonoBehaviour
 {
     // YENİ DURUMLAR EKLENDİ (SeekingMate, Mating)
-    public enum State { Idle, Wandering, ChasingFood, Eating, SeekingMate, Mating, ChasingPrey, Attacking }
+    public enum State { Idle, Wandering, ChasingFood, Eating, SeekingMate, Mating, ChasingPrey, Attacking, Fleeing, Defending }
 
     public State currentState;
 
@@ -56,6 +56,23 @@ public class LeaterBrain : MonoBehaviour
     [Tooltip("Tam uyumlu bir predatörün saldırabileceği avlara göre asgari boyut oranı.")]
     [Range(0.25f, 1f)] public float predatorRequiredSizeRatio = 0.65f;
 
+    [Header("Kaçış ve Savunma")]
+    [Tooltip("Bir avcının takibi kesildikten sonra tehdidin kaç saniye hatırlanacağı.")]
+    [Range(0.5f, 8f)] public float threatMemoryDuration = 2.5f;
+    [Tooltip("Kaçarken normal hareket hızına uygulanan kısa süreli çarpan.")]
+    [Range(1f, 2f)] public float fleeSpeedMultiplier = 1.18f;
+    [Tooltip("Kendisinden küçük bir saldırgana karşı savunmayı seçme taban olasılığı.")]
+    [Range(0f, 1f)] public float smallerThreatDefenseChance = 0.68f;
+    [Tooltip("Daha güçlü bir saldırgana karşı köşeye sıkışınca son kez savunma olasılığı.")]
+    [Range(0f, 1f)] public float lastStandDefenseChance = 0.22f;
+
+    [Header("Ekolojik Eş Seçimi")]
+    [Tooltip("Bu benzerliğin altındaki çok farklı beslenme tipleri yalnızca nadir çeşitlilik köprüsüyle eşleşebilir.")]
+    [Range(0f, 1f)] public float minimumMateSimilarity = 0.40f;
+    [Tooltip("Çok farklı iki soyun nadiren gen akışı kurabilme olasılığı.")]
+    [Range(0f, 0.25f)] public float diversityBridgeChance = 0.07f;
+    [Range(0f, 160f)] public float ecologicalMateWeight = 90f;
+
     [Header("Engel Aşma (Bıyık Sistemi)")]
     public LayerMask obstacleLayer; // Hangi objelerden kaçacak?
     public float avoidDistance = 1.0f; // Bıyıkların uzunluğu
@@ -90,6 +107,11 @@ public class LeaterBrain : MonoBehaviour
     private CreatureStats preyStats;
     private float currentAttackCooldown = 0f;
 
+    private CreatureStats threatStats;
+    private Transform threatSource;
+    private float threatTimer;
+    private State selectedThreatResponse = State.Fleeing;
+
     private CreatureStats stats;
 
     void Start()
@@ -107,13 +129,27 @@ public class LeaterBrain : MonoBehaviour
         ExecuteCurrentState();
 
         // Hareket durumlarını güncelliyoruz
-        stats.isMoving = (currentState == State.Wandering || currentState == State.ChasingFood || currentState == State.SeekingMate || currentState == State.ChasingPrey);
+        stats.isMoving = (currentState == State.Wandering || currentState == State.ChasingFood || currentState == State.SeekingMate || currentState == State.ChasingPrey || currentState == State.Fleeing);
         UpdateStateLabel();
     }
 
     // 🌟 İŞTE DÜZELTİLMİŞ O MUAZZAM KARAR MEKANİZMASI 🌟
     void EvaluatePriorities()
     {
+        threatTimer = Mathf.Max(0f, threatTimer - Time.deltaTime);
+        if (HasActiveThreat())
+        {
+            currentState = selectedThreatResponse;
+            isMatingMode = false;
+            return;
+        }
+
+        if (currentState == State.Fleeing || currentState == State.Defending)
+        {
+            ClearThreat();
+            ChooseNextAction();
+        }
+
         if (currentState == State.Eating || currentState == State.Mating || currentState == State.Attacking) return;
 
         radarTimer -= Time.deltaTime;
@@ -206,7 +242,9 @@ public class LeaterBrain : MonoBehaviour
             
             // 🌟 YENİ EKLENEN AVCILIK DURUMLARI 🌟
             case State.ChasingPrey: ChasePrey(); break;
-            case State.Attacking: AttackPrey(); break;          
+            case State.Attacking: AttackPrey(); break;
+            case State.Fleeing: FleeFromThreat(); break;
+            case State.Defending: DefendAgainstThreat(); break;
         }
     }
 
@@ -393,6 +431,148 @@ public class LeaterBrain : MonoBehaviour
         return Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y));
     }
 
+    public static float CalculateEcologicalSimilarity(CreatureData first, CreatureData second)
+    {
+        if (first == null || second == null) return 0f;
+
+        Vector3 firstProfile = GetEcologicalProfile(first);
+        Vector3 secondProfile = GetEcologicalProfile(second);
+        float distance = Mathf.Abs(firstProfile.x - secondProfile.x)
+            + Mathf.Abs(firstProfile.y - secondProfile.y)
+            + Mathf.Abs(firstProfile.z - secondProfile.z);
+        return Mathf.Clamp01(1f - (distance * 0.5f));
+    }
+
+    static Vector3 GetEcologicalProfile(CreatureData dna)
+    {
+        float plant = Mathf.Sqrt(Mathf.Clamp01(dna.desirePlant) * Mathf.Clamp01(dna.plantEfficiency * 0.5f));
+        float poison = Mathf.Sqrt(Mathf.Clamp01(dna.desirePoison) * Mathf.Clamp01(dna.poisonResistance));
+        float meat = Mathf.Sqrt(Mathf.Clamp01(dna.desireMeat) * Mathf.Clamp01(dna.meatEfficiency * 0.5f));
+        float total = Mathf.Max(plant + poison + meat, 0.001f);
+        return new Vector3(plant / total, poison / total, meat / total);
+    }
+
+    bool IsMateCompatible(CreatureStats candidate, float similarity)
+    {
+        if (candidate == null) return false;
+        if (similarity >= minimumMateSimilarity) return true;
+
+        long lowId = System.Math.Min(stats.observationId, candidate.observationId);
+        long highId = System.Math.Max(stats.observationId, candidate.observationId);
+        unchecked
+        {
+            uint hash = (uint)(lowId * 73856093L) ^ (uint)(highId * 19349663L)
+                ^ (uint)((stats.generation + candidate.generation) * 83492791);
+            float stableRoll = (hash & 0x00FFFFFF) / 16777215f;
+            float socialBridge = diversityBridgeChance * Mathf.Lerp(0.75f, 1.25f,
+                (stats.dna.sociability + candidate.dna.sociability) * 0.5f);
+            return stableRoll <= socialBridge;
+        }
+    }
+
+    public void RegisterThreat(CreatureStats attacker)
+    {
+        if (attacker == null || attacker == stats || attacker.currentHealth <= 0f) return;
+
+        bool isNewThreat = threatStats != attacker || threatTimer <= 0f;
+        threatStats = attacker;
+        threatSource = attacker.transform;
+        threatTimer = threatMemoryDuration;
+
+        if (!isNewThreat) return;
+
+        float ownSize = Mathf.Max(GetPhysicalSize(stats), 0.01f);
+        float attackerSize = Mathf.Max(GetPhysicalSize(attacker), 0.01f);
+        float sizeRatio = ownSize / attackerSize;
+        float healthRatio = stats.currentMaxHealth > 0f ? Mathf.Clamp01(stats.currentHealth / stats.currentMaxHealth) : 0f;
+        float defenseChance;
+
+        if (sizeRatio >= 1.15f)
+            defenseChance = smallerThreatDefenseChance;
+        else if (sizeRatio >= 0.85f)
+            defenseChance = Mathf.Lerp(lastStandDefenseChance, smallerThreatDefenseChance, 0.45f);
+        else
+            defenseChance = lastStandDefenseChance * Mathf.Lerp(1.5f, 0.35f, healthRatio);
+
+        float attackCost = Mathf.Max(stats.dna.baseSize * stats.dna.attackEnergyCost, 0.01f);
+        bool canDefend = stats.currentEnergy >= attackCost && stats.currentAttackDamage > 0f;
+        selectedThreatResponse = canDefend && Random.value <= Mathf.Clamp01(defenseChance)
+            ? State.Defending
+            : State.Fleeing;
+
+        CancelMatingForThreat();
+    }
+
+    bool HasActiveThreat()
+    {
+        return threatTimer > 0f && threatSource != null && threatStats != null && threatStats.currentHealth > 0f;
+    }
+
+    void ClearThreat()
+    {
+        threatStats = null;
+        threatSource = null;
+        threatTimer = 0f;
+    }
+
+    void CancelMatingForThreat()
+    {
+        if (targetMate != null)
+        {
+            LeaterBrain partner = targetMate.GetComponent<LeaterBrain>();
+            if (partner != null && partner.targetMate == transform)
+            {
+                partner.targetMate = null;
+                partner.mateStats = null;
+                if (partner.currentState == State.Mating) partner.currentState = State.Idle;
+            }
+        }
+
+        targetMate = null;
+        mateStats = null;
+        isMatingMode = false;
+    }
+
+    void FleeFromThreat()
+    {
+        if (!HasActiveThreat()) return;
+
+        moveDirection = ((Vector2)transform.position - (Vector2)threatSource.position).normalized;
+        if (moveDirection == Vector2.zero) moveDirection = Random.insideUnitCircle.normalized;
+
+        float normalSpeed = stats.currentSpeed;
+        stats.currentSpeed *= fleeSpeedMultiplier;
+        MoveAndRotate();
+        stats.currentSpeed = normalSpeed;
+    }
+
+    void DefendAgainstThreat()
+    {
+        if (!HasActiveThreat()) return;
+
+        Vector2 direction = (threatSource.position - transform.position).normalized;
+        if (direction != Vector2.zero)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(Vector3.forward, direction);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, stats.currentSpeed * 2f * Time.deltaTime);
+        }
+
+        float attackDistance = stats.dna.attackDistance + ((stats.dna.baseSize + threatStats.dna.baseSize) * 0.4f);
+        if (Vector2.Distance(transform.position, threatSource.position) > attackDistance) return;
+
+        currentAttackCooldown -= Time.deltaTime;
+        float attackEnergyCost = Mathf.Max(stats.dna.baseSize * stats.dna.attackEnergyCost, 0.01f);
+        if (currentAttackCooldown > 0f || stats.currentEnergy < attackEnergyCost) return;
+
+        float damage = stats.currentAttackDamage;
+        threatStats.TakeDamage(damage, SimulationDeathCause.Predation, stats);
+        stats.currentEnergy = Mathf.Max(0f, stats.currentEnergy - attackEnergyCost);
+        stats.lifetimeAttacks++;
+        stats.lifetimeDamageDealt += damage;
+        SimulationEventLogger.RecordAttack(stats, threatStats, damage);
+        currentAttackCooldown = stats.dna.attackCooldown;
+    }
+
     bool CanTargetCarrion()
     {
         float allowedEnergyThreshold = Mathf.Lerp(
@@ -496,9 +676,12 @@ public class LeaterBrain : MonoBehaviour
                     bool isOtherFertile = otherCreature.currentStage == LifeStage.Adult;
                     if (isOtherFertile)
                     {
+                        float ecologicalSimilarity = CalculateEcologicalSimilarity(stats.dna, otherCreature.dna);
+                        if (!IsMateCompatible(otherCreature, ecologicalSimilarity)) continue;
+
                         // 🌟 CİNSEL SEÇİLİM (SEXUAL SELECTION) ALGORİTMASI 🌟
                         // 1. Temel cazibe: Yakında olmak her zaman ufak bir avantajdır (Enerji tasarrufu)
-                        float mateScore = 10f / safeDist; 
+                        float mateScore = (10f / safeDist) + (ecologicalSimilarity * ecologicalMateWeight);
 
                         // 2. ZEHİR TÜKETİCİLERİ: Kendilerinden daha dayanıklı olanlara aşık olurlar!
                         if (stats.dna.desirePoison >= 0.3f) 
@@ -573,6 +756,8 @@ public class LeaterBrain : MonoBehaviour
             currentState = State.Idle;
             return;
         }
+
+        NotifyPreyOfThreat();
         
         // 🌟 FİX: Dinamik Avlanma Mesafesi 🌟
         float dynamicAttackDistance = stats.dna.attackDistance + ((stats.dna.baseSize + preyStats.dna.baseSize) * 0.4f);
@@ -596,6 +781,8 @@ public class LeaterBrain : MonoBehaviour
             currentState = State.Idle; 
             return; 
         }
+
+        NotifyPreyOfThreat();
 
         float dynamicAttackDistance = stats.dna.attackDistance + ((stats.dna.baseSize + preyStats.dna.baseSize) * 0.4f);
         if (Vector2.Distance(transform.position, targetPrey.position) > dynamicAttackDistance)
@@ -628,6 +815,13 @@ public class LeaterBrain : MonoBehaviour
 
             currentAttackCooldown = stats.dna.attackCooldown; // Soğuma süresini DNA'dan alıp sıfırla
         }
+    }
+
+    void NotifyPreyOfThreat()
+    {
+        if (targetPrey == null || preyStats == null) return;
+        LeaterBrain preyBrain = targetPrey.GetComponent<LeaterBrain>();
+        if (preyBrain != null) preyBrain.RegisterThreat(stats);
     }
 
     void ChaseFood()
@@ -721,7 +915,8 @@ public class LeaterBrain : MonoBehaviour
         }
 
         LeaterBrain mateBrain = targetMate.GetComponent<LeaterBrain>();
-        if (mateBrain == null || mateBrain.currentState != State.SeekingMate)
+        float ecologicalSimilarity = CalculateEcologicalSimilarity(stats.dna, mateStats.dna);
+        if (mateBrain == null || mateBrain.currentState != State.SeekingMate || !IsMateCompatible(mateStats, ecologicalSimilarity))
         {
             targetMate = null; mateStats = null; return;
         }
@@ -831,6 +1026,8 @@ public class LeaterBrain : MonoBehaviour
             else if (currentState == State.Mating) stats.currentStateName = "<color=#FF00FF>Çiftleşiyor! </color>";
             else if (currentState == State.ChasingPrey) stats.currentStateName = "<color=#8B0000><b>AV KOVALIYOR!</b></color>";
             else if (currentState == State.Attacking) stats.currentStateName = "<color=#FF0000><b>SALDIRIYOR!</b></color>";
+            else if (currentState == State.Fleeing) stats.currentStateName = "<color=#00BFFF><b>TEHDİTTEN KAÇIYOR!</b></color>";
+            else if (currentState == State.Defending) stats.currentStateName = "<color=#FFB000><b>KENDİNİ SAVUNUYOR!</b></color>";
             else if (currentState == State.SeekingMate) 
             {
                 // Ekranda gerçekten eşi bulup bulmadığını daha net anlaman için ufak bir detay
@@ -884,6 +1081,7 @@ void OnDrawGizmos()
         if (targetFood != null) { Gizmos.color = Color.red; Gizmos.DrawLine(transform.position, targetFood.position); }
         if (targetMate != null) { Gizmos.color = Color.magenta; Gizmos.DrawLine(transform.position, targetMate.position); }
         if (targetPrey != null) { Gizmos.color = new Color(0.6f, 0f, 0f); Gizmos.DrawLine(transform.position, targetPrey.position); }
+        if (threatSource != null) { Gizmos.color = Color.cyan; Gizmos.DrawLine(transform.position, threatSource.position); }
 
         // 🌟 2. SÜRÜ LİDERİ TAKİP ÇİZGİSİ (Turkuaz Çizgi) 🌟
         if (targetFlock != null)
